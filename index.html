@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Thrive Collective - Mural Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="css/style.css" rel="icon"/>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <button id="sidebarHideBtn" class="sidebar-hide-btn" aria-label="Hide sidebar">
+          <span>‹</span>
+        </button>
+        <header class="sidebar-header">
+          <img src="ThriveCollective_BlackLogoHorizontal.png" alt="Thrive Collective" class="logo" />
+        </header>
+
+        <section class="utility-panel">
+          <div class="utility-headline">
+            <p>Find a Mural Near You.</p>
+          </div>
+          <input id="manual-address-input" type="text" placeholder="Enter your address or zip code…" class="address-input" autocomplete="off" />
+          <div class="location-actions">
+            <button id="use-device-gps-btn" class="ghost-btn">Use Device GPS</button>
+            <button id="clearLocationBtn" class="ghost-btn">Clear</button>
+          </div>
+          <div id="nearestResults" class="nearest-results empty"></div>
+        </section>
+
+        <section class="filters">
+          <div class="filter-group">
+            <label>Mural View — <span id="muralViewLabel">100%</span></label>
+            <input type="range" id="muralViewSlider" min="10" max="100" step="5" value="100" class="mural-view-slider" />
+          </div>
+          <div class="filter-group" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+            <label style="display: flex; align-items: center; cursor: pointer; color: white;">
+              <input type="checkbox" id="toggleDistricts" checked style="margin-right: 10px; width: 18px; height: 18px;">
+              Show Council Districts
+            </label>
+          </div>
+
+          <div class="filter-group">
+            <label for="searchInput">Search</label>
+            <input type="text" id="searchInput" placeholder="Search Murals..." />
+          </div>
+          
+          <div class="filter-group">
+            <label for="yearFilter">Year</label>
+            <select id="yearFilter" class="filter-select">
+              <option value="">All Years</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="schoolsFilter">Schools / Sites</label>
+            <select id="schoolsFilter" class="filter-select">
+              <option value="">All Schools</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="boroughFilter">Borough</label>
+            <select id="boroughFilter" class="filter-select">
+              <option value="">All Boroughs</option>
+            </select>
+          </div>
+
+        </section>
+
+        <section class="tours-panel">
+          <div class="filter-header">
+            <label>Curated Tours</label>
+          </div>
+          <p class="tours-panel-subtitle">
+            Routes that chain murals by borough. Use them as starting points for walking tours.
+          </p>
+          <div id="tourCards" class="tour-card-grid">
+            <!-- Populated via JS -->
+          </div>
+        </section>
+      </aside>
+
+      <!-- Modal for View All popups -->
+      <div id="viewAllModal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="modalTitle">View All</h2>
+            <button class="modal-close" id="modalClose">&times;</button>
+          </div>
+          <div class="modal-body" id="modalBody">
+            <!-- Content will be populated dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <main id="map-container">
+        <div id="map"></div>
+        <div id="map-loading">Loading murals…</div>
+        <div id="map-error" class="hidden">
+          There was a problem loading mural data. Check the CSV URL or network connection.
+        </div>
+      </main>
+
+      <button
+        id="sidebarShowTab"
+        class="sidebar-show-tab hidden"
+        aria-label="Show sidebar"
+        aria-expanded="false"
+      >
+        <span>›</span>
+      </button>
+    </div>
+
+    <!-- Config (CSV URL, defaults, etc.) -->
+    <script src="js/config.js"></script>
+    <!-- MarkerClusterer library for clustering -->
+    <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
+    <!-- Map logic -->
+    <script src="js/map.js"></script>
+
+    <!-- Google Maps JavaScript API -->
+    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDf_8CxcMnNxWSpk-vUU5wC0Qog4SUVeM&libraries=places&callback=initMap"></script>
+  </body>
+</html>
