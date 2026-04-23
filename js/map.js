@@ -1756,7 +1756,7 @@ if (clearBtn) {
       zoom: DEFAULT_ZOOM,
       styles: DARK_MAP_STYLE,
       disableDefaultUI: false,
-      zoomControl: true,
+      zoomControl: false,        // disabled — replaced by custom nav controls below
       mapTypeControl: false,
       scaleControl: true,
       streetViewControl: false,
@@ -1774,6 +1774,130 @@ if (clearBtn) {
       }
     });
     directionsRenderer.setMap(map);
+
+    // ── Custom pan + zoom controls ────────────────────────────────────────────
+    // Replaces the built-in zoom control with a fully functional custom control
+    // that includes directional pan arrows (N/S/E/W) + zoom in / zoom out.
+    (function addCustomNavControls() {
+      const PAN_STEP = 150; // pixels to pan per click
+
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = [
+        'display:grid',
+        'grid-template-columns:repeat(3,36px)',
+        'grid-template-rows:repeat(3,36px)',
+        'gap:4px',
+        'margin:10px',
+        'user-select:none',
+      ].join(';');
+
+      // Button style shared by all
+      const btnBase = [
+        'width:36px', 'height:36px',
+        'border:none', 'border-radius:8px',
+        'background:rgba(17,24,39,0.88)',
+        'color:#e2e8f0',
+        'font-size:16px', 'line-height:1',
+        'cursor:pointer',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'box-shadow:0 2px 8px rgba(0,0,0,0.55)',
+        'transition:background 0.15s, transform 0.1s',
+        '-webkit-tap-highlight-color:transparent',
+      ].join(';');
+
+      function makeBtn(label, title, action) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = title;
+        b.style.cssText = btnBase;
+        b.innerHTML = label;
+        b.addEventListener('mouseover',  () => { b.style.background = 'rgba(59,130,246,0.75)'; });
+        b.addEventListener('mouseout',   () => { b.style.background = 'rgba(17,24,39,0.88)'; });
+        b.addEventListener('mousedown',  () => { b.style.transform = 'scale(0.92)'; });
+        b.addEventListener('mouseup',    () => { b.style.transform = 'scale(1)'; });
+        b.addEventListener('touchstart', (e) => { e.preventDefault(); b.style.background='rgba(59,130,246,0.75)'; }, { passive:false });
+        b.addEventListener('touchend',   (e) => { e.preventDefault(); b.style.background='rgba(17,24,39,0.88)'; action(); }, { passive:false });
+        b.addEventListener('click', (e) => { e.stopPropagation(); action(); });
+        return b;
+      }
+
+      // Pan helper — converts pixel offset to lat/lng offset at current zoom
+      function panPx(dx, dy) {
+        const proj   = map.getProjection();
+        const center = map.getCenter();
+        if (!proj || !center) return;
+        const scale  = Math.pow(2, map.getZoom());
+        const wc     = proj.fromLatLngToPoint(center);
+        const newWC  = new google.maps.Point(
+          wc.x + dx / scale,
+          wc.y + dy / scale
+        );
+        map.setCenter(proj.fromPointToLatLng(newWC));
+      }
+
+      // Grid positions (row, col) — 3×3:
+      //   [0,1] = up      [1,0] = left   [1,1] = center/GPS   [1,2] = right   [2,1] = down
+      //   Zoom buttons sit below (separate row)
+
+      const btnUp    = makeBtn('▲', 'Pan North',  () => panPx(0,  -PAN_STEP));
+      const btnLeft  = makeBtn('◄', 'Pan West',   () => panPx(-PAN_STEP, 0));
+      const btnRight = makeBtn('►', 'Pan East',   () => panPx( PAN_STEP, 0));
+      const btnDown  = makeBtn('▼', 'Pan South',  () => panPx(0,  PAN_STEP));
+
+      // Centre button — resets to NYC default view
+      const btnCtr = makeBtn('⌖', 'Reset to NYC', () => {
+        map.setCenter(DEFAULT_CENTER);
+        map.setZoom(DEFAULT_ZOOM);
+      });
+      btnCtr.style.fontSize = '20px';
+
+      // Zoom buttons (full-width in their own rows below the pad)
+      const btnZoomIn  = makeBtn('+', 'Zoom in',  () => map.setZoom(map.getZoom() + 1));
+      const btnZoomOut = makeBtn('−', 'Zoom out', () => map.setZoom(map.getZoom() - 1));
+      btnZoomIn.style.cssText  = btnBase + ';width:116px;border-radius:8px;font-size:20px;font-weight:700;';
+      btnZoomOut.style.cssText = btnBase + ';width:116px;border-radius:8px;font-size:20px;font-weight:700;';
+
+      // Blank spacers for unused grid cells
+      const blank = () => {
+        const d = document.createElement('div');
+        d.style.cssText = 'width:36px;height:36px;';
+        return d;
+      };
+
+      // Row 0: [blank] [up] [blank]
+      wrapper.appendChild(blank());
+      wrapper.appendChild(btnUp);
+      wrapper.appendChild(blank());
+      // Row 1: [left] [centre] [right]
+      wrapper.appendChild(btnLeft);
+      wrapper.appendChild(btnCtr);
+      wrapper.appendChild(btnRight);
+      // Row 2: [blank] [down] [blank]
+      wrapper.appendChild(blank());
+      wrapper.appendChild(btnDown);
+      wrapper.appendChild(blank());
+
+      // Zoom row — sits below the 3×3 pad in a flex column wrapper
+      const outer = document.createElement('div');
+      outer.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:center;';
+      outer.appendChild(wrapper);
+
+      const zoomRow = document.createElement('div');
+      zoomRow.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin:0 10px 10px;';
+      zoomRow.appendChild(btnZoomIn);
+      zoomRow.appendChild(btnZoomOut);
+      outer.appendChild(zoomRow);
+
+      // Prevent map drag/click events from firing through the control
+      outer.addEventListener('mousedown',  (e) => e.stopPropagation());
+      outer.addEventListener('touchstart', (e) => e.stopPropagation(), { passive:true });
+      outer.addEventListener('dblclick',   (e) => e.stopPropagation());
+      outer.addEventListener('wheel',      (e) => e.stopPropagation(), { passive:true });
+
+      // Inject as a Google Maps RIGHT_TOP custom control
+      map.controls[google.maps.ControlPosition.RIGHT_TOP].push(outer);
+    })();
+    // ── End custom nav controls ───────────────────────────────────────────────
 
     // ── Transit layer: shows subway/bus lines on the dark map ──────────────
     const transitLayer = new google.maps.TransitLayer();
