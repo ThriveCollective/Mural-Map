@@ -30,6 +30,8 @@ let zoomTimeout;
 let directionsService = null;
 let directionsRenderer = null;
 let routeRenderers = [];
+let muralHistory = JSON.parse(localStorage.getItem('mural_history') || '[]');
+let savedMurals = JSON.parse(localStorage.getItem('saved_murals') || '[]');
 
 // ── Theme Helper ─────────────────────────────────────────────────────────────
 /**
@@ -862,8 +864,82 @@ function updateClusterer() {
   }
 }
 
+/** Tracks recently viewed murals in the sidebar */
+function addToRecents(mural) {
+  if (!mural || !mural.uid) return;
+  muralHistory = muralHistory.filter(m => m.uid !== mural.uid);
+  muralHistory.unshift({
+    uid: mural.uid,
+    name: mural.name,
+    school: mural.school,
+    borough: mural.borough
+  });
+  if (muralHistory.length > 5) muralHistory.pop();
+  localStorage.setItem('mural_history', JSON.stringify(muralHistory));
+  renderRecents();
+}
+
+function renderRecents() {
+  const container = document.getElementById('recentMuralsList');
+  if (!container) return;
+  container.innerHTML = muralHistory.length === 0 
+    ? '<p class="tours-panel-subtitle">No murals viewed yet.</p>' 
+    : '';
+  muralHistory.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'recent-card';
+    card.innerHTML = `<h4>${m.name}</h4><p>${m.school || m.borough || ''}</p>`;
+    card.onclick = () => focusOnMuralByUid(m.uid);
+    container.appendChild(card);
+  });
+}
+
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+  setTimeout(() => {
+    toast.classList.add('hidden');
+  }, 3000);
+}
+
+function toggleSaveMural(mural) {
+  const index = savedMurals.findIndex(m => m.uid === mural.uid);
+  if (index === -1) {
+    savedMurals.push({
+      uid: mural.uid,
+      name: mural.name,
+      school: mural.school,
+      borough: mural.borough
+    });
+    showToast(`Saved ${mural.name}`);
+  } else {
+    savedMurals.splice(index, 1);
+    showToast(`Removed ${mural.name}`);
+  }
+  localStorage.setItem('saved_murals', JSON.stringify(savedMurals));
+  renderSavedMurals();
+}
+
+function renderSavedMurals() {
+  const container = document.getElementById('savedMuralsList');
+  if (!container) return;
+  container.innerHTML = savedMurals.length === 0 
+    ? '<p class="tours-panel-subtitle">No saved murals yet.</p>' 
+    : '';
+  savedMurals.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'recent-card';
+    card.innerHTML = `<h4>${m.name}</h4><p>${m.school || m.borough || ''}</p>`;
+    card.onclick = () => focusOnMuralByUid(m.uid);
+    container.appendChild(card);
+  });
+}
+
 function showMuralPopup(marker) {
   const m = marker.mural;
+  addToRecents(m);
   
   // Create unique ID for this popup's carousel
   const popupId = 'popup-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -871,6 +947,7 @@ function showMuralPopup(marker) {
   // For now, use single image. If multiple images exist, they can be added to an array
   const images = m.image_url ? [m.image_url] : [];
   let currentImageIndex = 0;
+  const isSavedInitial = savedMurals.some(sm => sm.uid === m.uid);
   
   const distanceAway =
     userLocation && m.lat && m.lng
@@ -991,6 +1068,10 @@ function showMuralPopup(marker) {
       </div>
 
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
+        <button id="${popupId}-save"
+          style="flex:1; border:1px solid ${isSavedInitial ? 'var(--brand-blue)' : 'var(--panel-border)'}; border-radius:999px; background:${isSavedInitial ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}; color:${isSavedInitial ? 'var(--brand-blue)' : 'var(--text-main)'}; font-weight:600; padding:10px 18px; cursor:pointer;">
+          ${isSavedInitial ? 'Saved ✓' : 'Save'}
+        </button>
         <button id="${popupId}-directions"
           style="flex:1; border:none; border-radius:999px; background:#3b82f6; color:#0f172a; font-weight:600; padding:10px 18px; cursor:pointer; font-size:14px; font-family:system-ui,sans-serif;">
           Directions
@@ -1060,6 +1141,16 @@ function showMuralPopup(marker) {
       if (map.getZoom() < 15) {
         map.setZoom(15);
       }
+    });
+
+    const saveBtn = document.getElementById(`${popupId}-save`);
+    saveBtn?.addEventListener("click", () => {
+      toggleSaveMural(m);
+      const currentlySaved = savedMurals.some(sm => sm.uid === m.uid);
+      saveBtn.textContent = currentlySaved ? 'Saved ✓' : 'Save';
+      saveBtn.style.borderColor = currentlySaved ? 'var(--brand-blue)' : 'var(--panel-border)';
+      saveBtn.style.background = currentlySaved ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
+      saveBtn.style.color = currentlySaved ? 'var(--brand-blue)' : 'var(--text-main)';
     });
 
     // ── Directions button ─────────────────────────────────────────────────────
@@ -1774,6 +1865,8 @@ if (clearBtn) {
     console.log(`Loaded ${murals.length} murals from CSV`);
     allMurals = murals;
     buildCuratedTours();
+    renderRecents();
+    renderSavedMurals();
 
     if (murals.length === 0) {
       throw new Error("No murals found in CSV. Check that the CSV has valid data with 'mural_title', 'lat', and 'lng' columns.");
@@ -1952,15 +2045,6 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
     tabContainer.querySelectorAll('.dir-tab').forEach(t => {
       const isActive = t.dataset.mode === modeKey;
       t.classList.toggle('dir-tab--active', isActive);
-      if (isActive) {
-        t.style.border      = '1px solid rgba(59,130,246,0.6)';
-        t.style.background  = 'rgba(59,130,246,0.22)';
-        t.style.color       = 'var(--brand-blue)';
-      } else {
-        t.style.border      = '1px solid var(--panel-border)';
-        t.style.background  = 'var(--card-bg)';
-        t.style.color       = 'var(--text-muted)';
-      }
     });
 
     _drawMode(results, modeKey, origin, destination);
@@ -2050,45 +2134,25 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     <!-- Mode tabs -->
     <div id="dir-tabs" style="display:flex; padding:8px 10px 0; gap:4px; flex-shrink:0; overflow-x:auto;
                                scrollbar-width:none;">
-      <button class="dir-tab dir-tab--active" data-mode="TRANSIT"
-        onclick="window._directionsSelectMode('TRANSIT')"
-        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
-               border-radius:5px; border:1px solid rgba(59,130,246,0.5);
-               background:rgba(59,130,246,0.25); color:var(--brand-blue);
-               cursor:pointer; white-space:nowrap; flex-shrink:0;">
+      <button class="dir-tab dir-tab--active" data-mode="TRANSIT" onclick="window._directionsSelectMode('TRANSIT')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M297.5-422.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Zm532.5-93Q880-471 880-400v160q0 33-23.5 56.5T800-160l80 80H520l80-80q-33 0-56.5-23.5T520-240v-160q0-71 50-115.5T700-560q80 0 130 44.5ZM679-291q-9 9-9 21t9 21q9 9 21 9t21-9q9-9 9-21t-9-21q-9-9-21-9t-21 9Zm-91-149q-4 9-6 19t-2 21v40h240v-40q0-11-2-21t-6-19H588ZM480-880q172 0 246 37t74 123v96q-18-6-38-9.5t-42-5.5v-41H240v120h260q-16 17-27.5 37T453-480H240v120q0 33 23.5 56.5T320-280h120v80H320v40q0 17-11.5 28.5T280-120h-40q-17 0-28.5-11.5T200-160v-82q-18-20-29-44.5T160-340v-380q0-83 77-121.5T480-880Zm2 120h224-448 224Zm-224 0h448q-15-17-64.5-28.5T482-800q-107 0-156.5 12.5T258-760Zm195 280Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Transit</span>
-        <span id="dir-time-TRANSIT" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
+        <span id="dir-time-TRANSIT" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="WALKING"
-        onclick="window._directionsSelectMode('WALKING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
-               border-radius:5px; border:1px solid var(--panel-border);
-               background:var(--card-bg); color:currentColor;
-               cursor:pointer; white-space:nowrap; flex-shrink:0;">
+      <button class="dir-tab" data-mode="WALKING" onclick="window._directionsSelectMode('WALKING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Walk</span>
-        <span id="dir-time-WALKING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
+        <span id="dir-time-WALKING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="DRIVING"
-        onclick="window._directionsSelectMode('DRIVING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
-               border-radius:5px; border:1px solid var(--panel-border);
-               background:var(--card-bg); color:currentColor;
-               cursor:pointer; white-space:nowrap; flex-shrink:0;">
+      <button class="dir-tab" data-mode="DRIVING" onclick="window._directionsSelectMode('DRIVING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm-32 80v200-200Zm100 160q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Zm-460 40h560v-200H200v200Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Drive</span>
-        <span id="dir-time-DRIVING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
+        <span id="dir-time-DRIVING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="BICYCLING"
-        onclick="window._directionsSelectMode('BICYCLING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
-               border-radius:5px; border:1px solid var(--panel-border);
-               background:var(--card-bg); color:currentColor;
-               cursor:pointer; white-space:nowrap; flex-shrink:0;">
+      <button class="dir-tab" data-mode="BICYCLING" onclick="window._directionsSelectMode('BICYCLING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-12-11-18-25.5t-6-30.5q0-16 6.5-30.5T312-624l112-112q12-12 27.5-18t32.5-6q17 0 32.5 6t27.5 18l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Bike</span>
-        <span id="dir-time-BICYCLING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
+        <span id="dir-time-BICYCLING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
     </div>
 
@@ -2141,9 +2205,6 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     panel.querySelectorAll('.dir-tab').forEach(t => {
       const isTransit = t.dataset.mode === 'TRANSIT';
       t.classList.toggle('dir-tab--active', isTransit);
-      t.style.border     = isTransit ? '1px solid rgba(59,130,246,0.6)' : '1px solid rgba(148,163,184,0.2)';
-      t.style.background = isTransit ? 'rgba(59,130,246,0.22)'          : 'var(--card-bg)';
-      t.style.color      = isTransit ? 'var(--brand-blue)'              : 'var(--text-muted)';
     });
   });
 
@@ -2253,7 +2314,7 @@ function _showRouteList(results, modeKey, origin, destination) {
       const chips = leg.steps.map(step => {
         if (step.travel_mode === 'WALKING') {
           return `<span ...>
-  <svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3">
+  <svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor">
     <path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/>
   </svg>
   ${step.duration?.text}
@@ -2265,9 +2326,9 @@ function _showRouteList(results, modeKey, origin, destination) {
           const lineColor = t?.line?.color ? `#${t.line.color}` : color;
           const lineText  = t?.line?.text_color ? `#${t.line.text_color}` : '#ffffff';
           const vehicle   = t?.line?.vehicle?.type || '';
-          const emoji     = vehicle === 'SUBWAY' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M240-120v-40l60-40q-59 0-99.5-40.5T160-340v-380q0-83 77-121.5T480-880q172 0 246 37t74 123v380q0 59-40.5 99.5T660-200l60 40v40H240Zm0-440h200v-120H240v120Zm420 80H240h480-60Zm-140-80h200v-120H520v120ZM382.5-337.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Zm280 0Q680-355 680-380t-17.5-42.5Q645-440 620-440t-42.5 17.5Q560-405 560-380t17.5 42.5Q595-320 620-320t42.5-17.5ZM300-280h360q26 0 43-17t17-43v-140H240v140q0 26 17 43t43 17Zm180-520q-86 0-142.5 10T258-760h448q-18-20-74.5-30T480-800Zm0 40h226-448 222Z"/></svg>'
-                          : vehicle === 'BUS'    ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M264-144q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-85q-23-19-35.5-47T192-360v-360q0-72 58-108t230-36q171 0 229.5 36T768-720v360q0 32-12.5 60T720-253v85q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-48H336v48q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48Zm218.18-600H692 269h213.18ZM624-480H264h432-72Zm-360-72h432v-120H264v120Zm130 202q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM269-744h423q-20-29-66-38.5T480-792q-93 0-140.5 10T269-744Zm67.06 456h288.22Q654-288 675-309.15T696-360v-120H264v120q0 30 21.17 51 21.16 21 50.89 21Z"/></svg>'
-                          : vehicle === 'RAIL'   ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M264-144v-24l50-50q-53-9-87.5-49T192-360v-360q0-72 66-108t222-36q156 0 222 36t66 108v360q0 53-34.5 93T646-218l50 50v24H264Zm0-408h432v-120H264v120Zm378 72H264h432-54ZM514-350q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-178 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-504q-98 0-147 12.5T269-744h423q-14-23-64-35.5T480-792Zm0 48h212-423 211Z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="m168-96 72-72h480l72 72H168Zm95-120 49-50q-52-9-86-49t-34-93v-264q0-113 84-176.5T480-912q120 0 204 63.5T768-672v264q0 53-34 93t-86 49l48 50H263Zm73-120h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm178-62q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM264-600h432v-72q0-13-1.5-25t-5.5-23H271q-4 11-5.5 23t-1.5 25v72Zm58-192h316q-30-23-70.5-35.5T480-840q-47 0-87.5 12.5T322-792Zm158 264Zm0-264Z"/></svg>';
+          const emoji     = vehicle === 'SUBWAY' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M240-120v-40l60-40q-59 0-99.5-40.5T160-340v-380q0-83 77-121.5T480-880q172 0 246 37t74 123v380q0 59-40.5 99.5T660-200l60 40v40H240Zm0-440h200v-120H240v120Zm420 80H240h480-60Zm-140-80h200v-120H520v120ZM382.5-337.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Zm280 0Q680-355 680-380t-17.5-42.5Q645-440 620-440t-42.5 17.5Q560-405 560-380t17.5 42.5Q595-320 620-320t42.5-17.5ZM300-280h360q26 0 43-17t17-43v-140H240v140q0 26 17 43t43 17Zm180-520q-86 0-142.5 10T258-760h448q-18-20-74.5-30T480-800Zm0 40h226-448 222Z"/></svg>'
+                          : vehicle === 'BUS'    ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M264-144q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-85q-23-19-35.5-47T192-360v-360q0-72 58-108t230-36q171 0 229.5 36T768-720v360q0 32-12.5 60T720-253v85q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-48H336v48q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48Zm218.18-600H692 269h213.18ZM624-480H264h432-72Zm-360-72h432v-120H264v120Zm130 202q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM269-744h423q-20-29-66-38.5T480-792q-93 0-140.5 10T269-744Zm67.06 456h288.22Q654-288 675-309.15T696-360v-120H264v120q0 30 21.17 51 21.16 21 50.89 21Z"/></svg>'
+                          : vehicle === 'RAIL'   ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M264-144v-24l50-50q-53-9-87.5-49T192-360v-360q0-72 66-108t222-36q156 0 222 36t66 108v360q0 53-34.5 93T646-218l50 50v24H264Zm0-408h432v-120H264v120Zm378 72H264h432-54ZM514-350q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-178 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-504q-98 0-147 12.5T269-744h423q-14-23-64-35.5T480-792Zm0 48h212-423 211Z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="m168-96 72-72h480l72 72H168Zm95-120 49-50q-52-9-86-49t-34-93v-264q0-113 84-176.5T480-912q120 0 204 63.5T768-672v264q0 53-34 93t-86 49l48 50H263Zm73-120h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm178-62q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM264-600h432v-72q0-13-1.5-25t-5.5-23H271q-4 11-5.5 23t-1.5 25v72Zm58-192h316q-30-23-70.5-35.5T480-840q-47 0-87.5 12.5T322-792Zm158 264Zm0-264Z"/></svg>';
           return `<span style="display:inline-flex; align-items:center; gap:3px;
                                padding:2px 7px; border-radius:999px;
                                background:${lineColor}; color:${lineText};
@@ -2524,9 +2585,9 @@ function _buildItinerary(route, modeKey, color) {
       const lineColor = t?.line?.color      ? `#${t.line.color}`      : color;
       const lineText  = t?.line?.text_color ? `#${t.line.text_color}` : '#ffffff';
       const vehicle   = t?.line?.vehicle?.type || '';
-      const emoji     = vehicle === 'SUBWAY' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M192-312v-360q0-36 16.5-63t51-45q34.5-18 89.5-27t131-9q77 0 131.5 9t89 27q34.5 18 51 45t16.5 63v360q0 54-34.5 94T645-170l51 50v24h-78l-72-72H414l-72 72h-78v-24l50-50q-53-8-87.5-48T192-312Zm288-432q-103 0-147 11.5T269-696h423q-17-25-58.5-36.5T480-744ZM264-504h180v-120H264v120Zm378 72H264h432-54Zm-126-72h180v-120H516v120ZM394-302q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-298 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-456h212-423 211Z"/></svg>' : 
-                        vehicle === 'BUS' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M264-144q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-85q-23-19-35.5-47T192-360v-360q0-72 58-108t230-36q171 0 229.5 36T768-720v360q0 32-12.5 60T720-253v85q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-48H336v48q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48Zm218.18-600H692 269h213.18ZM624-480H264h432-72Zm-360-72h432v-120H264v120Zm130 202q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM269-744h423q-20-29-66-38.5T480-792q-93 0-140.5 10T269-744Zm67.06 456h288.22Q654-288 675-309.15T696-360v-120H264v120q0 30 21.17 51 21.16 21 50.89 21Z"/></svg>' : 
-                        vehicle === 'RAIL' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="M264-144v-24l50-50q-53-9-87.5-49T192-360v-360q0-72 66-108t222-36q156 0 222 36t66 108v360q0 53-34.5 93T646-218l50 50v24H264Zm0-408h432v-120H264v120Zm378 72H264h432-54ZM514-350q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-178 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-504q-98 0-147 12.5T269-744h423q-14-23-64-35.5T480-792Zm0 48h212-423 211Z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="#F3F3F3"><path d="m168-96 72-72h480l72 72H168Zm95-120 49-50q-52-9-86-49t-34-93v-264q0-113 84-176.5T480-912q120 0 204 63.5T768-672v264q0 53-34 93t-86 49l48 50H263Zm73-120h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm178-62q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM264-600h432v-72q0-13-1.5-25t-5.5-23H271q-4 11-5.5 23t-1.5 25v72Zm58-192h316q-30-23-70.5-35.5T480-840q-47 0-87.5 12.5T322-792Zm158 264Zm0-264Z"/></svg>';
+      const emoji     = vehicle === 'SUBWAY' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M192-312v-360q0-36 16.5-63t51-45q34.5-18 89.5-27t131-9q77 0 131.5 9t89 27q34.5 18 51 45t16.5 63v360q0 54-34.5 94T645-170l51 50v24h-78l-72-72H414l-72 72h-78v-24l50-50q-53-8-87.5-48T192-312Zm288-432q-103 0-147 11.5T269-696h423q-17-25-58.5-36.5T480-744ZM264-504h180v-120H264v120Zm378 72H264h432-54Zm-126-72h180v-120H516v120ZM394-302q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-298 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-456h212-423 211Z"/></svg>' : 
+                        vehicle === 'BUS' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M264-144q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-85q-23-19-35.5-47T192-360v-360q0-72 58-108t230-36q171 0 229.5 36T768-720v360q0 32-12.5 60T720-253v85q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48q-10.2 0-17.1-6.9-6.9-6.9-6.9-17.1v-48H336v48q0 10.2-6.9 17.1-6.9 6.9-17.1 6.9h-48Zm218.18-600H692 269h213.18ZM624-480H264h432-72Zm-360-72h432v-120H264v120Zm130 202q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240 0q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM269-744h423q-20-29-66-38.5T480-792q-93 0-140.5 10T269-744Zm67.06 456h288.22Q654-288 675-309.15T696-360v-120H264v120q0 30 21.17 51 21.16 21 50.89 21Z"/></svg>' : 
+                        vehicle === 'RAIL' ? '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="M264-144v-24l50-50q-53-9-87.5-49T192-360v-360q0-72 66-108t222-36q156 0 222 36t66 108v360q0 53-34.5 93T646-218l50 50v24H264Zm0-408h432v-120H264v120Zm378 72H264h432-54ZM514-350q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-178 62h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm144-504q-98 0-147 12.5T269-744h423q-14-23-64-35.5T480-792Zm0 48h212-423 211Z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor"><path d="m168-96 72-72h480l72 72H168Zm95-120 49-50q-52-9-86-49t-34-93v-264q0-113 84-176.5T480-912q120 0 204 63.5T768-672v264q0 53-34 93t-86 49l48 50H263Zm73-120h288q30 0 51-21t21-51v-120H264v120q0 30 21 51t51 21Zm178-62q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM264-600h432v-72q0-13-1.5-25t-5.5-23H271q-4 11-5.5 23t-1.5 25v72Zm58-192h316q-30-23-70.5-35.5T480-840q-47 0-87.5 12.5T322-792Zm158 264Zm0-264Z"/></svg>';
       const headsign  = t?.headsign || '';
       const numStops  = t?.num_stops || 0;
       const stops     = t?.stops || [];        // array of {name, location} if provided by API
