@@ -12,7 +12,10 @@ window.MURAL_MAP_CONFIG = {
     DEFAULT_CENTER: { lat: 40.7128, lng: -74.006 },
   
     // 3. Default zoom level (11 = city level view).
-    DEFAULT_ZOOM: 11
+    DEFAULT_ZOOM: 11,
+
+    // 4. Map ID from Google Cloud Console (Required for Advanced Markers).
+    MAP_ID: "DEMO_MAP_ID" 
   };
   
 // Curated tours that can be extended by Thrive staff.

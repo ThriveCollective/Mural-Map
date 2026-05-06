@@ -5,13 +5,48 @@
 }
 
 :root {
+  --bg-color: #030712;
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
   --panel-bg: rgba(17, 24, 39, 0.92);
   --panel-border: rgba(148, 163, 184, 0.16);
   --panel-shadow: 0 25px 70px rgba(2, 6, 23, 0.55);
+  --card-bg: rgba(15, 23, 42, 0.6);
+  --input-bg: rgba(15, 23, 42, 0.65);
+  --input-border: rgba(148, 163, 184, 0.35);
+  --heading-color: #ffffff;
+  --modal-bg: rgba(15, 23, 42, 0.95);
+  --modal-overlay: rgba(3, 7, 18, 0.85);
+  --input-focus-bg: rgba(15, 23, 42, 0.85);
+  --select-hover-bg: rgba(15, 23, 42, 0.8);
+  --select-focus-bg: rgba(15, 23, 42, 0.85);
+
   --brand-blue: #3b82f6;
   --brand-green: #34d399;
   --brand-pink: #f472b6;
-  --text-muted: #9ca3af;
+}
+
+.light-mode {
+  --bg-color: #ffffff;
+  --text-main: #000000;
+  --text-muted: #64748b; /* Adjusted for better placeholder contrast */
+  --panel-bg: rgba(255, 255, 255, 0.98);
+  --panel-border: rgba(0, 0, 0, 0.4);
+  --panel-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --input-border: rgba(0, 0, 0, 0.15);
+  --heading-color: #000000;
+  --modal-bg: #ffffff;
+  --modal-overlay: rgba(255, 255, 255, 0.8);
+  --input-focus-bg: rgba(248, 250, 252, 0.85); /* Light background for focus */
+  --select-hover-bg: rgba(240, 240, 240, 0.8); /* Slightly darker white for hover */
+  --select-focus-bg: rgba(248, 250, 252, 0.85); /* Light background for focus */
+}
+
+.light-mode .nearest-card p,
+.light-mode .distance-pill {
+  color: #000000;
 }
 
 html,
@@ -23,9 +58,95 @@ body {
 
 body {
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #f3f4f6;
-  background: #030712;
+  color: var(--text-main);
+  background: var(--bg-color);
 }
+
+/* ── Force Map Image to Dark Mode ── */
+body:not(.light-mode) #map {
+  /* Inverts light tiles to dark. We use hardware acceleration hints to reduce lag. */
+  filter: invert(100%) hue-rotate(180deg) brightness(0.9) contrast(1.2);
+  background: #000000 !important;
+  will-change: filter;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* ── Un-invert and Brighten original colors for markers and popups ── */
+/* This ensures the pins and popups look "normal" even though the map is inverted */
+body:not(.light-mode) .mural-marker-vnode {
+  filter: invert(100%) hue-rotate(180deg) brightness(1.2) saturate(1.4);
+  will-change: filter;
+}
+
+body:not(.light-mode) .gm-style-iw-c {
+  filter: invert(100%) hue-rotate(180deg) brightness(1.1);
+}
+
+/* Optimized Dark Mode Map Background */
+body:not(.light-mode) #map-container {
+  background: #000000 !important;
+}
+
+/* ── Optimized Marker Styles (using minimal DOM nodes) ── */
+.mural-marker-vnode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-weight: 700;
+}
+
+/* Base Green Dot (Default) */
+.marker-dot {
+  width: 24px;
+  height: 24px;
+  background: #22c55e;
+  border: 3.5px solid #ffffff;
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.marker-dot::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #ffffff;
+  border-radius: 50%;
+}
+
+/* Numbered & Cluster Markers */
+.marker-number, .marker-cluster {
+  background: var(--marker-color, #22c55e);
+  border: 4px solid #ffffff;
+  border-radius: 50%;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.marker-number { width: 36px; height: 36px; font-size: 15px; }
+.marker-cluster { width: 40px; height: 40px; font-size: 16px; }
+
+/* Highlight / Nearest Marker */
+.marker-highlight {
+  width: 44px;
+  height: 44px;
+  background: var(--marker-color, #fbbf24);
+  border: 4.5px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 15px rgba(251, 191, 36, 0.4);
+  position: relative;
+}
+.marker-highlight::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-radius: 50%;
+}
+
 
 #app {
   position: relative;
@@ -34,12 +155,13 @@ body {
   overflow: hidden;
   background: radial-gradient(circle at top, rgba(59, 130, 246, 0.25), transparent 45%),
     radial-gradient(circle at 20% 80%, rgba(244, 114, 182, 0.18), transparent 50%),
-    #030712;
+    var(--bg-color);
 }
 
 #map-container {
   position: absolute;
   inset: 0;
+  border: 2px solid var(--brand-blue);
   background: #0f172a;
 }
 
@@ -50,7 +172,7 @@ body {
 
 #sidebar {
   position: absolute;
-  top: clamp(16px, 4vh, 48px);
+  top: clamp(24px, 5vh, 64px);
   left: clamp(16px, 4vw, 56px);
   width: min(380px, calc(100% - 32px));
   max-height: calc(100vh - clamp(32px, 8vh, 96px));
@@ -112,24 +234,24 @@ body {
 .sidebar-show-tab {
   position: fixed;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 40px;
-  height: 80px;
+  top: calc(clamp(24px, 5vh, 64px) + 16px);
+  transform: none;
+  width: 48px;
+  height: 64px;
   border-top-right-radius: 12px;
   border-bottom-right-radius: 12px;
-  background: var(--panel-bg);
+  background: var(--brand-blue);
   border: 1px solid var(--panel-border);
   border-left: none;
-  color: #e2e8f0;
+  color: white;
   font-size: 24px;
   font-weight: bold;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
-  transition: all 0.3s ease;
+  z-index: 2000;
+  transition: transform 0.3s ease, opacity 0.3s ease, background 0.3s ease;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
 }
@@ -151,7 +273,7 @@ body {
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 0 0 8px 0;
   margin-bottom: 8px;
 }
@@ -161,13 +283,17 @@ body {
   height: auto;
   display: block;
   margin: 0 auto;
+  border: 4px solid #000000;
+  background-color: #000000;
+  padding: 8px;
+  border-radius: 2px;
 }
 
 .utility-panel {
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 5px;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--card-bg);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -175,7 +301,7 @@ body {
 
 .utility-headline p {
   margin: 0;
-  color: #e2e8f0;
+  color: var(--text-main);
   font-size: 14px;
   font-weight: 500;
 }
@@ -209,9 +335,9 @@ body {
 }
 
 .ghost-btn {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  color: #e2e8f0;
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-main);
 }
 
 .ghost-btn:disabled {
@@ -231,14 +357,30 @@ body {
   opacity: 0.8;
 }
 
+.nearest-card h3,
+.nearest-card p {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
 .nearest-card {
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 5px;
+  padding: 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.nearest-card:hover {
+  background: var(--input-focus-bg);
+  border-color: var(--brand-blue);
+  transform: translateX(4px);
 }
 
 .nearest-card header {
@@ -251,7 +393,7 @@ body {
 .nearest-card h3 {
   margin: 0;
   font-size: 15px;
-  color: #f9fafb;
+  color: var(--heading-color);
 }
 
 .nearest-card p {
@@ -300,7 +442,7 @@ body {
 
 .filter-group label {
   font-size: 13px;
-  color: #dbeafe;
+  color: var(--text-main);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -335,9 +477,9 @@ body {
   width: 100%;
   padding: 10px 12px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.65);
-  color: #ffffff;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-main);
   font-size: 14px;
   outline: none;
 }
@@ -348,7 +490,7 @@ body {
 
 #searchInput:focus {
   border-color: #93c5fd;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--input-focus-bg);
 }
 
 /* scroll filters replaced by dropdowns */
@@ -359,7 +501,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(3, 7, 18, 0.85);
+  background: var(--modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -372,14 +514,14 @@ body {
 }
 
 .modal-content {
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--modal-bg);
   border-radius: 18px;
   max-width: 520px;
   width: 100%;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid var(--panel-border);
   box-shadow: var(--panel-shadow);
 }
 
@@ -394,7 +536,7 @@ body {
 .modal-header h2 {
   margin: 0;
   font-size: 18px;
-  color: #ffffff;
+  color: var(--heading-color);
   font-weight: 600;
 }
 
@@ -430,11 +572,11 @@ body {
 
 .modal-item {
   padding: 12px;
-  background: rgba(15, 23, 42, 0.65);
+  background: var(--card-bg);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--panel-border);
 }
 
 .modal-item:hover {
@@ -443,9 +585,9 @@ body {
 }
 
 .modal-item.active {
-  background: #ffffff;
-  color: #1f2937;
-  border-color: #ffffff;
+  background: var(--brand-blue);
+  color: #ffffff;
+  border-color: var(--brand-blue);
   font-weight: 500;
 }
 
@@ -455,14 +597,14 @@ body {
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(15, 23, 42, 0.85);
-  color: #ffffff;
+  background: var(--panel-bg);
+  color: var(--text-main);
   border-radius: 999px;
   padding: 10px 20px;
   font-size: 12px;
   box-shadow: 0 10px 30px rgba(2, 6, 23, 0.35);
   z-index: 2;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid var(--panel-border);
 }
 
 #map-error {
@@ -500,8 +642,8 @@ body {
 .tour-card {
   padding: 14px 16px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--panel-border);
+  background: var(--card-bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -517,7 +659,7 @@ body {
 .tour-card h3 {
   margin: 0;
   font-size: 15px;
-  color: #f9fafb;
+  color: var(--heading-color);
 }
 
 .tour-card p {
@@ -617,25 +759,26 @@ body {
 
 /* ── Mural popup — matches sidebar glassmorphism ────────────────── */
 .gm-style-iw-d {
-  background: rgba(17, 24, 39, 0.96) !important;
-  color: #e2e8f0 !important;
+  background: var(--panel-bg) !important;
+  color: var(--text-main) !important;
   padding: 0 !important;
-  overflow: hidden !important;
-  width: 500px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  width: var(--iw-width, 500px) !important;
   max-width: 500px !important;
-  min-width: 500px !important;
+  flex-shrink: 0 !important;
+  display: block !important;
   backdrop-filter: blur(24px) !important;
   -webkit-backdrop-filter: blur(24px) !important;
 }
 
 .gm-style-iw-c {
-  background: rgba(17, 24, 39, 0.96) !important;
-  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--panel-border) !important;
   box-shadow: 0 25px 70px rgba(2, 6, 23, 0.55) !important;
   padding: 0 !important;
-  width: 500px !important;
+  width: var(--iw-width, 500px) !important;
   max-width: 500px !important;
-  min-width: 500px !important;
   overflow: hidden !important;
   border-radius: 8px !important;
   backdrop-filter: blur(24px) !important;
@@ -645,6 +788,11 @@ body {
 /* ── Directions panel — floats to the right of the sidebar ─────── */
 #directions-panel {
   /* Positioning is set dynamically in JS to match sidebar's exact coordinates */
+  transition: opacity 0.25s ease, transform 0.25s ease, height 0.3s ease !important;
+}
+
+#directions-panel.minimized {
+  height: 60px !important;
 }
 
 #directions-panel #dir-route-list {
@@ -685,8 +833,8 @@ body {
 }
 
 .gm-style-iw-d > div {
-  background: rgba(17, 24, 39, 0.96) !important;
-  color: #e2e8f0 !important;
+  background: var(--panel-bg) !important;
+  color: var(--text-main) !important;
   overflow: hidden !important;
 }
 
@@ -724,9 +872,9 @@ body {
   width: 100%;
   padding: 10px 12px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.65);
-  color: #ffffff;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-main);
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -739,21 +887,21 @@ body {
 
 .address-input:focus {
   border-color: #93c5fd;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--input-focus-bg);
 }
 
 /* Google autocomplete dropdown matches dark theme */
 .pac-container {
-  background: #1e293b;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(2, 6, 23, 0.5);
   font-family: inherit;
 }
 
 .pac-item {
-  color: #e2e8f0;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  color: var(--text-main);
+  border-top: 1px solid var(--panel-border);
   padding: 8px 12px;
   cursor: pointer;
   font-size: 13px;
@@ -765,7 +913,7 @@ body {
 }
 
 .pac-item-query {
-  color: #ffffff;
+  color: var(--heading-color);
   font-size: 13px;
 }
 
@@ -783,10 +931,11 @@ body {
   gap: 8px;
 }
 
+.location-actions .primary-btn,
 .location-actions .ghost-btn {
   flex: 1;
-  font-size: 12px;
-  padding: 8px 10px;
+  font-size: 11px;
+  padding: 8px 6px;
 }
 
 /* ── Filter select dropdowns ───────────────────────────────────────── */
@@ -794,9 +943,9 @@ body {
   width: 100%;
   padding: 9px 32px 9px 12px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.65);
-  color: #e2e8f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-main);
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -811,18 +960,18 @@ body {
 }
 
 .filter-select:hover {
-  border-color: rgba(148, 163, 184, 0.55);
-  background-color: rgba(15, 23, 42, 0.8);
+  border-color: var(--input-border); /* Keep consistent with input border */
+  background-color: var(--select-hover-bg);
 }
 
 .filter-select:focus {
   border-color: #93c5fd;
-  background-color: rgba(15, 23, 42, 0.85);
+  background-color: var(--select-focus-bg);
 }
 
 .filter-select option {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: var(--bg-color);
+  color: var(--text-main);
 }
 
 /* ── Mural view range slider ───────────────────────────────────────── */
@@ -875,3 +1024,36 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
 }
+
+/* ── Theme Toggle Button ── */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 0 12px;
+  height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.theme-toggle span:not(#themeToggleText) {
+  font-size: 16px;
+  margin-right: 8px;
+  line-height: 1;
+}
+
+.theme-toggle:hover {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: var(--brand-blue);
+  transform: scale(1.05);
+}
+
+.light-mode .sun-icon { display: none; }
+body:not(.light-mode) .moon-icon { display: none; }

@@ -16,16 +16,37 @@ let userLocation = null;
 let userLocationMarker = null;
 let userAccuracyCircle = null;
 let curatedTours = [];
+let searchInfoWindow = null; // Dedicated info window for search results
+let highlightedMuralUids = new Set();
+let searchConnectionLines = []; // Lines connecting search dot to nearby murals
 let curatedTourStops = new Map();
 let activeTourPolyline = null;
 let modalData = { schools: [], boroughs: [], tours: [] };
 let modalListenersBound = false;
 let tourStopNumbers = new Map(); // Maps mural UID to stop number for active tour
 let tourMarkers = []; // Separate array for numbered tour markers (not clustered)
+let districtLabels = []; // Global scope so theme toggle can access it
 // Services for Directions
+let zoomTimeout;
 let directionsService = null;
 let directionsRenderer = null;
 let routeRenderers = [];
+
+// ── Theme Helper ─────────────────────────────────────────────────────────────
+/**
+ * Determines if the UI should be in light mode based on localStorage or system preference.
+ * This ensures the map and sidebar are in sync immediately on load.
+ */
+function getInitialThemeIsLight() {
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme) {
+    return savedTheme === 'light';
+  }
+  return window.matchMedia('(prefers-color-scheme: light)').matches;
+}
+
+// Apply the initial theme to the body immediately to prevent flashing
+document.body.classList.toggle('light-mode', getInitialThemeIsLight());
 
 // ── Reverse-geocoding ────────────────────────────────────────────────────────
 // geocoder is initialised inside initMap() once the Maps API is ready.
@@ -73,6 +94,7 @@ const CONFIG = window.MURAL_MAP_CONFIG || {};
 const CSV_URL = CONFIG.CSV_URL || "";
 const DEFAULT_CENTER = CONFIG.DEFAULT_CENTER || { lat: 40.7128, lng: -74.006 };
 const DEFAULT_ZOOM = CONFIG.DEFAULT_ZOOM || 11;
+const MAP_ID = CONFIG.MAP_ID || "DEMO_MAP_ID";
 const TOUR_DEFINITIONS = Array.isArray(window.MURAL_TOURS) ? window.MURAL_TOURS : [];
 const CURATED_TOUR_PREFIX = "curated:";
 const DATA_TOUR_PREFIX = "data:";
@@ -85,97 +107,44 @@ const NEAREST_DEFAULT_MESSAGE =
   "Tap “Find murals near me” to surface the closest murals and walking directions.";
 
 
+// Standard Google Maps light style
+const LIGHT_MAP_STYLE = [
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] }
+];
+
 
 
 // Dark theme for Google Maps
 const DARK_MAP_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#212121" }] },
+  { elementType: "geometry", stylers: [{ color: "#000000" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#f8fafc" }] }, // Maximum brightness text
+  { elementType: "labels.text.stroke", stylers: [{ color: "#000000" }] },
   {
     featureType: "administrative",
-    elementType: "geometry",
-    stylers: [{ color: "#757575" }]
-  },
-  {
-    featureType: "administrative.country",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#9e9e9e" }]
-  },
-  {
-    featureType: "administrative.land_parcel",
-    stylers: [{ visibility: "off" }]
-  },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#bdbdbd" }]
-  },
-  {
-    featureType: "poi",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#757575" }]
-  },
-  {
-    featureType: "poi.park",
-    elementType: "geometry",
-    stylers: [{ color: "#181818" }]
-  },
-  {
-    featureType: "poi.park",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#616161" }]
-  },
-  {
-    featureType: "poi.park",
-    elementType: "labels.text.stroke",
-    stylers: [{ color: "#1b1b1b" }]
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#64748b" }, { weight: 1 }] // Brighter administrative lines
   },
   {
     featureType: "road",
     elementType: "geometry.fill",
-    stylers: [{ color: "#2c2c2c" }]
-  },
-  {
-    featureType: "road",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#8a8a8a" }]
-  },
-  {
-    featureType: "road.arterial",
-    elementType: "geometry",
-    stylers: [{ color: "#373737" }]
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#3c3c3c" }]
-  },
-  {
-    featureType: "road.highway.controlled_access",
-    elementType: "geometry",
-    stylers: [{ color: "#4e4e4e" }]
-  },
-  {
-    featureType: "road.local",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#616161" }]
-  },
-  {
-    featureType: "transit",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#757575" }]
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
     stylers: [{ color: "#000000" }]
   },
   {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#475569" }, { weight: 0.8 }] // Clearer road outlines
+  },
+  {
+    featureType: "landscape",
+    elementType: "geometry",
+    stylers: [{ color: "#0a0a0a" }]
+  },
+  {
     featureType: "water",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#3d3d3d" }]
+    elementType: "geometry",
+    stylers: [{ color: "#0f172a" }] // Deep blue but visible
   }
 ];
 
@@ -195,12 +164,8 @@ function calculateDistanceMeters(pointA, pointB) {
 }
 
 function formatDistance(meters) {
-  const feet = meters * 3.28084; // Convert meters to feet
-  if (feet >= 5280) {
-    const miles = feet / 5280;
-    return `${miles.toFixed(miles >= 10 ? 0 : 1)} mi`;
-  }
-  return `${Math.round(feet)} ft`;
+  const miles = meters / 1609.344;
+  return `${miles.toFixed(2)} mi`;
 }
 
 // Group murals by location (same lat/lng rounded to ~10 meters precision)
@@ -660,21 +625,33 @@ async function loadMuralsFromSheet() {
 }
 
 // Create a numbered marker icon for tour stops
-function createNumberedMarkerIcon(number, color = "#3b82f6") {
-  const svg = `
-    <svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="18" cy="18" r="16" fill="${color}" stroke="#ffffff" stroke-width="3"/>
-      <text x="18" y="18" text-anchor="middle" dominant-baseline="central" 
-            fill="#ffffff" font-size="16" font-weight="bold" font-family="Arial, sans-serif">
-        ${number}
-      </text>
-    </svg>
-  `;
-  return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(36, 36),
-    anchor: new google.maps.Point(18, 18)
-  };
+/**
+ * Helper to create DOM elements for AdvancedMarkerElement content.
+ * Optimized to return a single div node instead of an SVG with multiple children.
+ */
+function createMarkerElement(htmlOrClass, color = null, text = '') {
+  if (typeof htmlOrClass === 'string' && !htmlOrClass.startsWith('<')) {
+    const el = document.createElement('div');
+    el.className = `mural-marker-vnode ${htmlOrClass}`;
+    if (color) el.style.setProperty('--marker-color', color);
+    if (text) el.textContent = text;
+    return el;
+  }
+  const div = document.createElement('div');
+  div.className = 'mural-marker-vnode';
+  div.innerHTML = htmlOrClass.trim();
+  return div.firstChild;
+}
+
+/**
+ * Creates a vibrant yellow star marker for highlighted/nearest murals.
+ */
+function createHighlightedMarkerContent(color = "#fbbf24") {
+  return createMarkerElement('marker-highlight', color);
+}
+
+function createNumberedMarkerContent(number, color = "#22c55e") {
+  return createMarkerElement('marker-number', color, number);
 }
 
 function createMarkers(murals) {
@@ -684,6 +661,7 @@ function createMarkers(murals) {
   
   // Clear existing tour markers
   tourMarkers.forEach(marker => marker.setMap(null));
+  // Note: We re-use tourMarkers array for any non-clustered markers (tours or highlights)
   tourMarkers = [];
   
   if (clusterer) {
@@ -694,7 +672,7 @@ function createMarkers(murals) {
   const isTourActive = activeFilters.tour && activeFilters.tour.startsWith(CURATED_TOUR_PREFIX);
   
   // Get tour color if a tour is active
-  let tourColor = "#3b82f6";
+  let tourColor = "#22c55e";
   if (isTourActive) {
     const tourId = activeFilters.tour.replace(CURATED_TOUR_PREFIX, "");
     const entry = curatedTourStops.get(tourId);
@@ -709,14 +687,12 @@ function createMarkers(murals) {
     murals.forEach(mural => {
       const stopNumber = tourStopNumbers.get(mural.uid);
       if (stopNumber !== undefined) {
-        const icon = createNumberedMarkerIcon(stopNumber, tourColor);
-
-        const marker = new google.maps.Marker({
+        const marker = new google.maps.marker.AdvancedMarkerElement({
           position: { lat: mural.lat, lng: mural.lng },
-          map: map, // Add directly to map, bypassing clusterer
+          map: map,
           title: mural.name,
-          icon: icon,
-          zIndex: google.maps.Marker.MAX_ZINDEX + 1000
+          content: createNumberedMarkerContent(stopNumber, tourColor),
+          zIndex: 1000
         });
 
         marker.mural = mural;
@@ -733,10 +709,11 @@ function createMarkers(murals) {
   // Regular view: separate tour markers from regular markers
   const regularMurals = [];
   const tourMurals = [];
+  const highlightedMurals = [];
 
   murals.forEach(mural => {
     const stopNumber = tourStopNumbers.get(mural.uid);
-    if (stopNumber !== undefined) {
+    if (stopNumber !== undefined && isTourActive) {
       tourMurals.push({ mural, stopNumber });
     } else {
       regularMurals.push(mural);
@@ -748,34 +725,25 @@ function createMarkers(murals) {
 
  // Create regular markers (will be clustered)
  regularMurals.forEach(mural => {
+    // If this mural is in our "Nearest" highlight list, handle it separately
+    if (highlightedMuralUids.has(mural.uid) && !isTourActive) {
+      highlightedMurals.push(mural); 
+      return; // Skip clustering for this one
+    }
+
    let lat = parseFloat(mural.lat);
    let lng = parseFloat(mural.lng);
-   const coordKey = `${lat},${lng}`;
 
-   // If this exact coordinate already exists, add a tiny offset
-   if (seenCoordinates.has(coordKey)) {
-     lat += (Math.random() - 0.5) * 0.0001; // Tiny shift north/south
-     lng += (Math.random() - 0.5) * 0.0001; // Tiny shift east/west
-   } else {
-     seenCoordinates.add(coordKey);
-   }
+   // Use a deterministic jitter based on UID so markers don't "jump" when filtering
+   const jitterSeed = mural.uid.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+   lat += ((jitterSeed % 10) - 5) * 0.00002;
+   lng += (((jitterSeed / 10) % 10) - 5) * 0.00002;
 
-   const icon = {
-     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-       <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-         <circle cx="16" cy="16" r="12" fill="#65cccc" stroke="#ffffff" stroke-width="2"/>
-         <circle cx="16" cy="16" r="6" fill="#ffffff"/>
-       </svg>
-     `),
-     scaledSize: new google.maps.Size(32, 32),
-     anchor: new google.maps.Point(16, 16)
-   };
-
-   const marker = new google.maps.Marker({
+   const marker = new google.maps.marker.AdvancedMarkerElement({
      position: { lat: lat, lng: lng }, // Use the updated lat/lng with jitter
-     map: null, // Don't add to map directly, let clusterer handle it
+     map: null,
      title: mural.name,
-     icon: icon
+     content: createMarkerElement('marker-dot')
    });
 
    marker.mural = mural;
@@ -788,14 +756,12 @@ function createMarkers(murals) {
 
   // Create numbered tour markers (added directly to map, not clustered)
   tourMurals.forEach(({ mural, stopNumber }) => {
-    const icon = createNumberedMarkerIcon(stopNumber, tourColor);
-
-    const marker = new google.maps.Marker({
+    const marker = new google.maps.marker.AdvancedMarkerElement({
       position: { lat: mural.lat, lng: mural.lng },
-      map: map, // Add directly to map, bypassing clusterer
+      map: map,
       title: mural.name,
-      icon: icon,
-      zIndex: google.maps.Marker.MAX_ZINDEX + 1000 // High z-index to appear above clusters
+      content: createNumberedMarkerContent(stopNumber, tourColor),
+      zIndex: 1000
     });
 
     marker.mural = mural;
@@ -807,33 +773,41 @@ function createMarkers(murals) {
     tourMarkers.push(marker);
   });
 
+  // Create non-clustered Highlight markers (Vibrant Gold with a star)
+  highlightedMurals.forEach(mural => {
+    const marker = new google.maps.marker.AdvancedMarkerElement({
+      position: { lat: mural.lat, lng: mural.lng },
+      map: map,
+      title: mural.name,
+      content: createHighlightedMarkerContent("#fbbf24"),
+      zIndex: 1500 // Higher than everything else
+    });
+
+    marker.mural = mural;
+    marker.addListener("click", () => {
+      showMuralPopup(marker);
+    });
+
+    // We track these in tourMarkers so they get cleared on the next refresh
+    tourMarkers.push(marker);
+  });
+
   // Update clusterer with only regular markers
   updateClusterer();
 }
 
 // Create custom renderer for blue clusters
 function createClusterRenderer() {
+  // Use yellow for clusters if we are currently highlighting nearest murals
+  const isHighlighted = highlightedMuralUids && highlightedMuralUids.size > 0;
+  const clusterColor = isHighlighted ? "#fbbf24" : "#65cccc";
+
   return {
     render: ({ count, position }) => {
-      // Create a blue cluster icon
-      const svg = `
-        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="20" cy="20" r="16" fill="#65cccc" stroke="#ffffff" stroke-width="2"/>
-          <text x="20" y="20" text-anchor="middle" dominant-baseline="central" 
-                fill="#ffffff" font-size="16" font-weight="bold" font-family="Arial, sans-serif">
-            ${count}
-          </text>
-        </svg>
-      `;
-      
-      return new google.maps.Marker({
+      return new google.maps.marker.AdvancedMarkerElement({
         position,
-        icon: {
-          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-          scaledSize: new google.maps.Size(40, 40),
-          anchor: new google.maps.Point(20, 20)
-        },
-        zIndex: Number(google.maps.Marker.MAX_ZINDEX) + count
+        content: createMarkerElement('marker-cluster', clusterColor, count),
+        zIndex: 2000 + count
       });
     }
   };
@@ -902,82 +876,17 @@ function updateClusterer() {
   }
   
   // Recreate clusterer when zoom changes to update clustering radius
-  // Use a debounce to avoid recreating too frequently during zoom
-  // Store timeout so we can clear it if needed
-  let zoomTimeout;
-  let lastZoom = map ? map.getZoom() : null;
-  
-  function onZoomChanged() {
-    // Only update clustering, don't interfere with zoom
-    if (!map) return;
-    
-    const currentZoom = map.getZoom();
-    
-    // Don't update clustering if 25% view is active (it should stay at 5 clusters)
-    if (activeFilters.muralView === 25) {
-      lastZoom = currentZoom;
-      return; // Keep the 5-cluster view regardless of zoom
-    }
-    
-    // Only update if zoom actually changed (not just a programmatic change)
-    if (currentZoom === lastZoom) return;
-    lastZoom = currentZoom;
-    
-    clearTimeout(zoomTimeout);
-    zoomTimeout = setTimeout(() => {
-      if (clusterer && markers.length > 0 && map) {
-        clusterer.clearMarkers();
-        const algorithm = createAlgorithm();
-        if (typeof markerClusterer !== 'undefined' && markerClusterer.MarkerClusterer) {
-          clusterer = new markerClusterer.MarkerClusterer({ 
-            map, 
-            markers,
-            algorithm: algorithm,
-            renderer: renderer
-          });
-        } else if (window.markerClusterer && window.markerClusterer.MarkerClusterer) {
-          clusterer = new window.markerClusterer.MarkerClusterer({ 
-            map, 
-            markers,
-            algorithm: algorithm,
-            renderer: renderer
-          });
-        }
-      }
-    }, 200); // Debounce zoom changes
-  }
-  
-  // Listen for zoom changes to update clustering (but don't prevent zoom)
-  if (map) {
-    google.maps.event.clearListeners(map, 'zoom_changed');
-    google.maps.event.addListener(map, 'zoom_changed', onZoomChanged);
-  }
-  
   // Initial clusterer creation
   if (typeof markerClusterer !== 'undefined' && markerClusterer.MarkerClusterer) {
-    // Always recreate clusterer to ensure renderer is applied
-    if (clusterer) {
-      clusterer.clearMarkers();
-    }
     const algorithm = createAlgorithm();
-    clusterer = new markerClusterer.MarkerClusterer({ 
-      map, 
-      markers,
-      algorithm: algorithm,
-      renderer: renderer
-    });
+    if (clusterer) clusterer.clearMarkers();
+    
+    clusterer = new markerClusterer.MarkerClusterer({ map, markers, algorithm, renderer });
   } else if (window.markerClusterer && window.markerClusterer.MarkerClusterer) {
-    // Always recreate clusterer to ensure renderer is applied
-    if (clusterer) {
-      clusterer.clearMarkers();
-    }
     const algorithm = createAlgorithm();
-    clusterer = new window.markerClusterer.MarkerClusterer({ 
-      map, 
-      markers,
-      algorithm: algorithm,
-      renderer: renderer
-    });
+    if (clusterer) clusterer.clearMarkers();
+
+    clusterer = new window.markerClusterer.MarkerClusterer({ map, markers, algorithm, renderer });
   } else {
     // Fallback if clusterer library not loaded - add markers directly to map
     markers.forEach(m => m.setMap(map));
@@ -1000,10 +909,10 @@ function showMuralPopup(marker) {
       : null;
 
   const html = `
-    <div id="${popupId}" style="width:500px; font-family: system-ui, sans-serif; color: #e2e8f0; background: rgba(17,24,39,0.96); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px;">
+    <div id="${popupId}" style="width:500px; min-width:500px; max-width:500px; font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px; flex-shrink: 0;">
       <!-- Header with Title and Close Button -->
       <div style="position: relative; margin-bottom: 16px;">
-        <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #ffffff; text-align: center; padding-right: 30px;">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--heading-color); text-align: center; padding-right: 30px;">
           ${m.name}${m.year ? ` (${m.year})` : ''}
         </h2>
         <button id="${popupId}-close" 
@@ -1017,7 +926,7 @@ function showMuralPopup(marker) {
       ${
         distanceAway
           ? `<div style="display:flex; justify-content:center; margin-bottom:12px;">
-              <span class="distance-pill" style="background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.35); color:#dbeafe;">
+              <span class="distance-pill" style="background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.35); color:var(--text-main);">
                 ${distanceAway} away
               </span>
             </div>`
@@ -1029,7 +938,7 @@ function showMuralPopup(marker) {
         <div style="position: relative; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #f3f4f6;">
           <div style="position: relative; width: 100%; padding-top: 56.25%; background: #e5e7eb;">
             <img id="${popupId}-img" src="${images[0]}" alt="${m.name}" 
-                 style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;">
+                 style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">
             ${images.length > 1 ? `
               <button id="${popupId}-prev" onclick="
                 const popup = document.getElementById('${popupId}');
@@ -1068,11 +977,11 @@ function showMuralPopup(marker) {
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div>
             <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Students:</div>
-            <div style="color: #e5e7eb; font-size: 14px; font-weight: 500;">${m.students_involved || '—'}</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.students_involved || '—'}</div>
           </div>
           <div>
             <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Teaching Artist:</div>
-            <div style="color: #e5e7eb; font-size: 14px; font-weight: 500;">${m.artist_names || '—'}</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.artist_names || '—'}</div>
           </div>
         </div>
         
@@ -1080,11 +989,11 @@ function showMuralPopup(marker) {
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div>
             <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">School:</div>
-            <div style="color: #e5e7eb; font-size: 14px; font-weight: 500;">${m.school || '—'}</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.school || '—'}</div>
           </div>
           <div>
             <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Borough:</div>
-            <div style="color: #e5e7eb; font-size: 14px; font-weight: 500;">${m.borough || '—'}</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.borough || '—'}</div>
           </div>
         </div>
       </div>
@@ -1094,10 +1003,10 @@ function showMuralPopup(marker) {
         <div
            style="display:flex; align-items:flex-start; gap:10px; padding:11px 14px; background:rgba(59,130,246,0.08); border-radius:10px; border:1px solid rgba(59,130,246,0.25);">
              <div style="min-width:0;">
-            <div style="color:#93c5fd; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; font-weight:600; margin-bottom:3px;">
+            <div style="color:var(--brand-blue); font-size:11px; text-transform:uppercase; letter-spacing:0.6px; font-weight:600; margin-bottom:3px;">
               Address
             </div>
-            <div id="${popupId}-address-text" style="color:#bfdbfe; font-size:13.5px; line-height:1.4; font-weight:500;">
+            <div id="${popupId}-address-text" style="color:var(--text-main); font-size:13.5px; line-height:1.4; font-weight:500;">
               Looking up address…
             </div>
           </div>
@@ -1106,8 +1015,8 @@ function showMuralPopup(marker) {
 
       <!-- Mural Description -->
       <div style="margin-bottom: 16px;">
-        <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-align: center; text-transform: uppercase; letter-spacing: 0.5px;">Mural Description</h3>
-        <div style="color: #d1d5db; font-size: 14px; line-height: 1.6;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--heading-color); text-align: center; text-transform: uppercase; letter-spacing: 0.5px;">Mural Description</h3>
+        <div style="color: var(--text-main); font-size: 14px; line-height: 1.6;">
           ${m.description || m.theme || 'No description available for this mural.'}
         </div>
       </div>
@@ -1118,7 +1027,7 @@ function showMuralPopup(marker) {
           Directions
         </button>
         <button id="${popupId}-focus"
-          style="flex:1; border:1px solid rgba(148,163,184,0.4); border-radius:999px; background:transparent; color:#f3f4f6; font-weight:600; padding:10px 18px; cursor:pointer;">
+          style="flex:1; border:1px solid var(--panel-border); border-radius:999px; background:transparent; color:var(--text-main); font-weight:600; padding:10px 18px; cursor:pointer;">
           Center Map
         </button>
         ${m.detail_url ? `
@@ -1139,23 +1048,19 @@ function showMuralPopup(marker) {
     const iwContainer = document.querySelector('.gm-style-iw-c');
     
     if (iwOuter) {
-      iwOuter.style.background = 'rgba(17,24,39,0.96)';
-      iwOuter.style.color = '#e2e8f0';
-      iwOuter.style.width = '500px';
-      iwOuter.style.maxWidth = '500px';
-      iwOuter.style.minWidth = '500px';
-      // Allow the inner content div to handle its own scrolling
-      iwOuter.style.overflow = 'visible';
+      iwOuter.style.background = 'var(--panel-bg)';
+      iwOuter.style.color = 'var(--text-main)';
+      iwOuter.style.width = 'var(--iw-width, 500px)';
+      iwOuter.style.display = 'block';
+      // Lock height context
+      iwOuter.style.overflowY = 'auto';
       iwOuter.style.maxHeight = 'none';
     }
     
     if (iwContainer) {
-      iwContainer.style.background = 'rgba(17,24,39,0.96)';
-      iwContainer.style.width = '500px';
-      iwContainer.style.maxWidth = '500px';
-      iwContainer.style.minWidth = '500px';
-      // Don't clip the inner scrollable div
-      iwContainer.style.overflow = 'visible';
+      iwContainer.style.background = 'var(--panel-bg)';
+      iwContainer.style.width = 'var(--iw-width, 500px)';
+      iwContainer.style.overflow = 'hidden';
       iwContainer.style.maxHeight = 'none';
     }
     
@@ -1297,7 +1202,14 @@ function applyFilters() {
   createMarkers(filtered); // then markers are drawn using the updated tourStopNumbers
 
   if (userLocation) {
-    renderNearestList(findNearestMurals());
+    const nearest = findNearestMurals(5);
+    // Only update highlights if we aren't in a curated tour mode
+    if (!activeFilters.tour || !activeFilters.tour.startsWith(CURATED_TOUR_PREFIX)) {
+        highlightedMuralUids = new Set(nearest.map(m => m.uid));
+    } else {
+        highlightedMuralUids.clear();
+    }
+    renderNearestList(nearest);
   }
 }
 
@@ -1487,9 +1399,22 @@ function setupMuralView() {
   setupManualLocationSearch();
 }
 
+/** Efficient zoom handler for clustering */
+function onZoomChanged() {
+  if (!map || !clusterer) return;
+  
+  const currentZoom = map.getZoom();
+  if (activeFilters.muralView === 25) return;
+
+  clearTimeout(zoomTimeout);
+  zoomTimeout = setTimeout(() => {
+    updateClusterer();
+  }, 300);
+}
+
 function initLayoutControls() {
-  const hideBtn = document.getElementById("sidebarHideBtn");
-  const showTab = document.getElementById("sidebarShowTab");
+  const hideBtn = document.getElementById("sidebarHideBtn") || document.querySelector(".sidebar-hide-btn");
+  const showTab = document.getElementById("sidebarShowTab") || document.querySelector(".sidebar-show-tab");
   const sidebar = document.getElementById("sidebar");
   const body = document.body;
   const mq = window.matchMedia("(max-width: 768px)");
@@ -1499,12 +1424,17 @@ function initLayoutControls() {
       sidebar?.classList.remove("hidden");
       showTab?.classList.add("hidden");
       showTab?.setAttribute("aria-expanded", "true");
+      body.classList.add("sidebar-open");
     } else {
       sidebar?.classList.add("hidden");
       showTab?.classList.remove("hidden");
       showTab?.setAttribute("aria-expanded", "false");
+      body.classList.remove("sidebar-open");
     }
   }
+
+  // Export to global scope so focusOnMuralByUid can minimize the sidebar
+  window.setSidebarVisibility = updateSidebarVisibility;
 
   function syncSidebarState() {
     if (!mq.matches) {
@@ -1582,26 +1512,24 @@ function handleLocationError(error) {
   renderNearestList([], message);
 }
 
-function setUserLocationMarker(position, accuracyMeters = 50) {
+function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "") {
   if (!map) return;
 
-  if (!userLocationMarker) {
-    userLocationMarker = new google.maps.Marker({
-      map,
-      zIndex: google.maps.Marker.MAX_ZINDEX + 1,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: "#60a5fa",
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2
-      }
-    });
-  }
+  const markerContent = createMarkerElement(`
+    <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none;">
+      <div class="mural-marker-vnode" style="width:20px; height:20px; background:#ef4444; border:3px solid white; border-radius:50%; box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);"></div>
+    </div>
+  `);
 
-  userLocationMarker.setPosition(position);
-  userLocationMarker.setMap(map);
+  if (!userLocationMarker) {
+    userLocationMarker = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      zIndex: 3000,
+      content: markerContent
+    });
+  } else {
+    userLocationMarker.content = markerContent;
+  }
 
   if (userAccuracyCircle) {
     userAccuracyCircle.setMap(null);
@@ -1611,21 +1539,25 @@ function setUserLocationMarker(position, accuracyMeters = 50) {
     map,
     center: position,
     radius: Math.max(accuracyMeters, 30),
-    fillColor: "#60a5fa",
+    fillColor: "#ef4444",
     fillOpacity: 0.1,
-    strokeColor: "#60a5fa",
+    strokeColor: "#ef4444",
     strokeOpacity: 0.4,
     strokeWeight: 1
   });
 
+  userLocationMarker.position = position;
+  userLocationMarker.map = map;
+
   map.panTo(position);
-  if (map.getZoom() < 14) {
-    map.setZoom(14);
-  }
+  // Set a precise street-level zoom if zoomed out
+  if (map.getZoom() < 16) map.setZoom(16);
 }
 
 function clearUserLocation() {
   userLocation = null;
+  highlightedMuralUids.clear();
+  applyFilters();
   
   if (userLocationMarker) {
     userLocationMarker.setMap(null);
@@ -1634,6 +1566,12 @@ function clearUserLocation() {
   if (userAccuracyCircle) {
     userAccuracyCircle.setMap(null);
     userAccuracyCircle = null;
+  }
+
+  // Close and remove the directions panel (route finder) if it's currently open
+  if (directionsPanel) {
+    directionsPanel.remove();
+    directionsPanel = null;
   }
 
   // ==========================================
@@ -1702,13 +1640,87 @@ function renderNearestList(results = null, customMessage = "") {
 }
 
 function focusOnMuralByUid(uid) {
+  // 1. Close the search results summary popup
+  if (searchInfoWindow) searchInfoWindow.close();
+
   const marker = markers.find(m => m.mural.uid === uid);
   if (marker) {
-    map.panTo(marker.getPosition());
+    map.panTo(marker.position);
     if (map.getZoom() < 15) {
       map.setZoom(15);
     }
     google.maps.event.trigger(marker, "click");
+  }
+}
+window.focusOnMuralByUid = focusOnMuralByUid;
+
+function renderNearestList(results = null, customMessage = "") {
+  const container = document.getElementById("nearestResults");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (customMessage) {
+    container.classList.remove("empty");
+    container.innerHTML = `<p style="color:var(--text-muted); font-size:13px; text-align:center;">${customMessage}</p>`;
+    return;
+  }
+
+  if (results && results.length) {
+    container.classList.remove("empty");
+    results.slice(0, 5).forEach((m, idx) => {
+      const card = document.createElement("div");
+      card.className = "nearest-card";
+      card.innerHTML = `
+        <header>
+          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+            <span style="font-size:10px; font-weight:800; color:#ffffff; background:var(--brand-blue); width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${idx + 1}</span>
+            <h3 style="margin:0; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h3>
+          </div>
+          <span class="distance-pill">${formatDistance(m.distance)}</span>
+        </header>
+        <p>${m.school || m.borough || "Mural Location"}</p>
+      `;
+      card.addEventListener("click", () => {
+        focusOnMuralByUid(m.uid);
+        if (userLocation) {
+          window.calculateTransitDirections(m.lat, m.lng, m.name);
+        }
+      });
+      container.appendChild(card);
+    });
+    return;
+  }
+
+  container.classList.add("empty");
+}
+
+function clearSearchConnections() {
+  searchConnectionLines.forEach(line => line.setMap(null));
+  searchConnectionLines = [];
+}
+
+/** Draws lines connecting the search location to the nearest murals */
+function drawSearchConnections(origin, nearestMurals) {
+  clearSearchConnections();
+  if (!map || !origin) return;
+
+  nearestMurals.forEach((m, idx) => {
+    const line = new google.maps.Polyline({
+      path: [origin, { lat: m.lat, lng: m.lng }],
+      geodesic: true,
+      strokeColor: "#fbbf24",
+      strokeOpacity: idx === 0 ? 0.8 : 0.3,
+      strokeWeight: idx === 0 ? 3 : 1.5,
+      map: map
+    });
+    searchConnectionLines.push(line);
+  });
+
+  // Automatically calculate proper transit route for the #1 closest mural
+  if (nearestMurals.length > 0) {
+    const closest = nearestMurals[0];
+    window.calculateTransitDirections(closest.lat, closest.lng, closest.name);
   }
 }
 
@@ -1719,15 +1731,6 @@ function focusOnMuralByUid(uid) {
 // Called by Google Maps JS API via callback parameter in index.html
 async function initMap() {
   try {
-    // Layout controls should already be initialized, but ensure they are
-    if (typeof initLayoutControls === 'function') {
-      infoWindow = new google.maps.InfoWindow();
-      try {
-        initLayoutControls();
-      } catch (e) {
-        console.error('Error re-initializing layout controls:', e);
-      }
-    }
     setupNearestControls();
     showError(false);
     showLoading(true);
@@ -1751,21 +1754,33 @@ if (clearBtn) {
 }
 
 
+    const isLight = getInitialThemeIsLight();
     map = new google.maps.Map(document.getElementById("map"), {
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
-      styles: DARK_MAP_STYLE,
-      disableDefaultUI: false,
-      zoomControl: false,        // replaced by custom nav controls
-      mapTypeControl: false,
+      mapId: MAP_ID,
+      // Use an empty array if Map ID is active, as Vector maps ignore styles.
+      // If Map ID is removed, this styles array will take effect immediately.
+      styles: isLight ? LIGHT_MAP_STYLE : DARK_MAP_STYLE,
+      disableDefaultUI: false, // Bring back the standard controls
+      zoomControl: true,
+      zoomControlOptions: {
+        position: google.maps.ControlPosition.LEFT_BOTTOM
+      },
       scaleControl: true,
-      streetViewControl: false,
-      rotateControl: false,
-      fullscreenControl: true
+      fullscreenControl: true,
+      streetViewControl: true,
+      controlSize: 22, // Smaller zoom buttons
+      backgroundColor: isLight ? '#f8fafc' : '#030712'
     });
+    
+    // Single zoom listener for the lifetime of the map
+    map.addListener('zoom_changed', onZoomChanged);
+
     // Initialize Directions Services
     directionsService = new google.maps.DirectionsService();
     directionsRenderer = new google.maps.DirectionsRenderer({
+      map: map,
       suppressMarkers: false, 
       polylineOptions: {
         strokeColor: "#3b82f6",
@@ -1774,120 +1789,6 @@ if (clearBtn) {
       }
     });
     directionsRenderer.setMap(map);
-
-    // ── Custom pan + zoom control (BOTTOM_RIGHT) ──────────────────────────────
-    // Replaces the broken default zoomControl with fully wired pan arrows
-    // (▲ ▼ ◄ ►), a centre-reset button (⌖), and zoom + / − buttons.
-    (function addCustomNavControls() {
-      const PAN_PX = 150;
-
-      const btnStyle = [
-        'width:40px','height:40px','border:none','border-radius:50%',
-        'background:rgba(255,255,255,0.95)','color:#333',
-        'font-size:16px','line-height:1','cursor:pointer',
-        'display:flex','align-items:center','justify-content:center',
-        'box-shadow:0 1px 4px rgba(0,0,0,0.3)',
-        'transition:background 0.15s,transform 0.1s',
-        '-webkit-tap-highlight-color:transparent',
-        'user-select:none',
-      ].join(';');
-
-      function makeBtn(label, title, action) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.title = title;
-        b.style.cssText = btnStyle;
-        b.innerHTML = label;
-        b.addEventListener('mouseover',  () => { b.style.background = '#e8e8e8'; });
-        b.addEventListener('mouseout',   () => { b.style.background = 'rgba(255,255,255,0.95)'; });
-        b.addEventListener('mousedown',  () => { b.style.transform = 'scale(0.90)'; });
-        b.addEventListener('mouseup',    () => { b.style.transform = 'scale(1)'; });
-        b.addEventListener('touchstart', (e) => { e.preventDefault(); b.style.background='#e8e8e8'; }, { passive:false });
-        b.addEventListener('touchend',   (e) => { e.preventDefault(); b.style.background='rgba(255,255,255,0.95)'; action(); }, { passive:false });
-        b.addEventListener('click',      (e) => { e.stopPropagation(); action(); });
-        return b;
-      }
-
-      // Pixel-based pan using the Maps Projection API
-      function panPx(dx, dy) {
-        const proj = map.getProjection();
-        const ctr  = map.getCenter();
-        if (!proj || !ctr) return;
-        const scale = Math.pow(2, map.getZoom());
-        const wc = proj.fromLatLngToPoint(ctr);
-        map.setCenter(proj.fromPointToLatLng(
-          new google.maps.Point(wc.x + dx / scale, wc.y + dy / scale)
-        ));
-      }
-
-      // ── 3×3 directional pad ─────────────────────────────────────────────────
-      const pad = document.createElement('div');
-      pad.style.cssText = [
-        'display:grid','grid-template-columns:repeat(3,40px)',
-        'grid-template-rows:repeat(3,40px)','gap:4px',
-        'margin:10px 10px 6px',
-      ].join(';');
-
-      const blank = () => { const d = document.createElement('div'); d.style.cssText='width:40px;height:40px;'; return d; };
-
-      const btnUp    = makeBtn('▲','Pan North', () => panPx(0,  -PAN_PX));
-      const btnLeft  = makeBtn('◄','Pan West',  () => panPx(-PAN_PX, 0));
-      const btnCtr   = makeBtn('⌖','Reset view',() => { map.setCenter(DEFAULT_CENTER); map.setZoom(DEFAULT_ZOOM); });
-      const btnRight = makeBtn('►','Pan East',  () => panPx( PAN_PX, 0));
-      const btnDown  = makeBtn('▼','Pan South', () => panPx(0,  PAN_PX));
-      btnCtr.style.fontSize = '20px';
-
-      // Row 0
-      pad.appendChild(blank());
-      pad.appendChild(btnUp);
-      pad.appendChild(blank());
-      // Row 1
-      pad.appendChild(btnLeft);
-      pad.appendChild(btnCtr);
-      pad.appendChild(btnRight);
-      // Row 2
-      pad.appendChild(blank());
-      pad.appendChild(btnDown);
-      pad.appendChild(blank());
-
-      // ── Zoom buttons ────────────────────────────────────────────────────────
-      const zoomWrap = document.createElement('div');
-      zoomWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin:0 10px 10px;';
-
-      const zBtnStyle = [
-        'width:40px','height:40px','border:none','border-radius:50%',
-        'background:rgba(255,255,255,0.95)','color:#333',
-        'font-size:22px','font-weight:700','line-height:1','cursor:pointer',
-        'display:flex','align-items:center','justify-content:center',
-        'box-shadow:0 1px 4px rgba(0,0,0,0.3)',
-        'transition:background 0.15s,transform 0.1s',
-        '-webkit-tap-highlight-color:transparent',
-      ].join(';');
-
-      const btnZoomIn  = makeBtn('+','Zoom in',  () => map.setZoom(Math.min(map.getZoom() + 1, 21)));
-      const btnZoomOut = makeBtn('−','Zoom out', () => map.setZoom(Math.max(map.getZoom() - 1,  0)));
-      btnZoomIn.style.cssText  = zBtnStyle;
-      btnZoomOut.style.cssText = zBtnStyle;
-
-      zoomWrap.appendChild(btnZoomIn);
-      zoomWrap.appendChild(btnZoomOut);
-
-      // ── Outer wrapper ───────────────────────────────────────────────────────
-      const outer = document.createElement('div');
-      outer.style.cssText = 'display:flex;flex-direction:column;';
-      outer.appendChild(pad);
-      outer.appendChild(zoomWrap);
-
-      // Block map events from passing through the control
-      ['mousedown','dblclick'].forEach(evt =>
-        outer.addEventListener(evt, e => e.stopPropagation()));
-      outer.addEventListener('wheel',      e => e.stopPropagation(), { passive:true });
-      outer.addEventListener('touchstart', e => e.stopPropagation(), { passive:true });
-
-      // Inject as a Google Maps BOTTOM_RIGHT custom control
-      map.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(outer);
-    })();
-    // ── End custom nav controls ───────────────────────────────────────────────
 
     // ── Transit layer: shows subway/bus lines on the dark map ──────────────
     const transitLayer = new google.maps.TransitLayer();
@@ -1918,8 +1819,8 @@ if (clearBtn) {
     setupMuralView();
 
 // --- CITY COUNCIL DISTRICTS LAYER ---
-// 1. Array to keep track of the text labels so we can toggle them on/off
-const districtLabels = [];
+// 1. Initialize global array for the text labels
+districtLabels = [];
 
 // 2. Load the GeoJSON file
 map.data.loadGeoJson('City_Council_Districts.geojson');
@@ -1927,8 +1828,8 @@ map.data.loadGeoJson('City_Council_Districts.geojson');
 // 3. Style the district lines
 map.data.setStyle({
   fillColor: 'transparent', 
-  strokeColor: '#c24f02',
-  strokeWeight: 1,           
+  strokeColor: '#60a5fa', // Brighter neon blue
+  strokeWeight: 1.5,           
   clickable: true            
 });
 
@@ -1946,20 +1847,16 @@ map.data.addListener('addfeature', function(e) {
   const center = bounds.getCenter();
 
   // Create a marker at the center with text, but make the pin itself invisible
-  const labelMarker = new google.maps.Marker({
+  // Using a fixed white color so it doesn't change during theme toggles
+  const labelMarker = new google.maps.marker.AdvancedMarkerElement({
     position: center,
     map: map,
-    zIndex: 999, // <--- ADD THIS LINE HERE
-    label: {
-      text: `Council District ${distNum}`,
-      color: '#FFFFFF',
-      fontSize: '10px',
-      fontWeight: 'bold'
-    },
-    icon: {
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: 0               // Makes the standard red pin completely invisible
-    }
+    zIndex: 999,
+    content: createMarkerElement(`
+      <div class="mural-marker-vnode" style="color: #FFFFFF; font-size: 11px; font-weight: bold; pointer-events: none; text-shadow: 0 0 5px rgba(0,0,0,1);">
+        Council District ${distNum}
+      </div>
+    `)
   });
 
   // Save it to our array
@@ -1974,7 +1871,7 @@ if (districtToggle) {
     
     // Toggle the lines
     if (isVisible) {
-      map.data.setStyle({ strokeColor: '#c24f02', strokeWeight: 1, strokeOpacity: 1.0, fillColor: 'transparent' });
+      map.data.setStyle({ strokeColor: '#60a5fa', strokeWeight: 1.5, strokeOpacity: 1.0, fillColor: 'transparent' });
     } else {
       map.data.setStyle({ strokeOpacity: 0, fillOpacity: 0 });
     }
@@ -2042,10 +1939,10 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
 
   // Travel modes to query in parallel
   const modes = [
-    { key: 'TRANSIT',   label: 'Transit',  color: '#65FE08', travelMode: google.maps.TravelMode.TRANSIT   },
-    { key: 'WALKING',   label: 'Walk',      color: '#3b82f6', travelMode: google.maps.TravelMode.WALKING   },
-    { key: 'DRIVING',   label: 'Drive',     color: '#FE1CCF', travelMode: google.maps.TravelMode.DRIVING   },
-    { key: 'BICYCLING', label: 'Bike',      color: '#F3FF00', travelMode: google.maps.TravelMode.BICYCLING },
+    { key: 'TRANSIT',   label: 'Transit',  color: '#4ade80', travelMode: google.maps.TravelMode.TRANSIT   },
+    { key: 'WALKING',   label: 'Walk',      color: '#60a5fa', travelMode: google.maps.TravelMode.WALKING   },
+    { key: 'DRIVING',   label: 'Drive',     color: '#f472b6', travelMode: google.maps.TravelMode.DRIVING   },
+    { key: 'BICYCLING', label: 'Bike',      color: '#fbbf24', travelMode: google.maps.TravelMode.BICYCLING },
   ];
 
   // Fetch all modes and populate panel tabs + route list
@@ -2091,11 +1988,11 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
       if (isActive) {
         t.style.border      = '1px solid rgba(59,130,246,0.6)';
         t.style.background  = 'rgba(59,130,246,0.22)';
-        t.style.color       = '#93c5fd';
+        t.style.color       = 'var(--brand-blue)';
       } else {
-        t.style.border      = '1px solid rgba(148,163,184,0.2)';
-        t.style.background  = 'rgba(15,23,42,0.6)';
-        t.style.color       = '#94a3b8';
+        t.style.border      = '1px solid var(--panel-border)';
+        t.style.background  = 'var(--card-bg)';
+        t.style.color       = 'var(--text-muted)';
       }
     });
 
@@ -2125,8 +2022,8 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     position: absolute;
     top: ${sidebarTop}px;
     left: ${sidebarLeft + sidebarWidth + gap}px;
-    width: 360px;
-    max-height: calc(100vh - ${sidebarTop + 16}px);
+    width: 330px;
+    height: calc(100vh - ${sidebarTop + 16}px);
     background: var(--panel-bg, rgba(17,24,39,0.92));
     border: 1px solid var(--panel-border, rgba(148,163,184,0.16));
     border-radius: 5px;
@@ -2136,8 +2033,8 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     z-index: 10;
     display: flex;
     flex-direction: column;
-    font-family: system-ui, sans-serif;
-    color: #e2e8f0;
+    font-family: inherit;
+    color: var(--text-main);
     overflow: hidden;
     opacity: 0;
     transform: translateX(-8px);
@@ -2147,77 +2044,92 @@ function _buildDirectionsPanel(label, destLat, destLng) {
   panel.innerHTML = `
     <!-- Header -->
     <div style="display:flex; justify-content:space-between; align-items:center;
-                padding:14px 16px 10px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0;">
+                padding:10px 12px 8px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0;">
       <div>
-        <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Directions to</div>
-        <div style="font-size:14px; font-weight:600; color:#f1f5f9; margin-top:2px;
-                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;">
+        <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Directions to</div>
+        <div style="font-size:13px; font-weight:600; color:var(--heading-color); margin-top:1px;
+                    line-height:1.3; max-width:230px;">
           ${label}
         </div>
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
+      <div style="display:flex; gap:6px; align-items:center;">
         <button id="dir-panel-clear"
-          style="background:none; border:1px solid rgba(148,163,184,0.3); color:#94a3b8;
-                 font-size:11px; font-weight:600; border-radius:999px; padding:4px 10px;
-                 cursor:pointer; white-space:nowrap;">
+          style="background:rgba(148,163,184,0.15); border:1px solid var(--panel-border); color:var(--text-muted);
+                 font-size:10px; font-weight:600; border-radius:999px; padding:2px 8px;
+                 cursor:pointer; white-space:nowrap; transition: background 0.2s, border-color 0.2s;"
+                 onmouseover="this.style.background='rgba(148,163,184,0.25)';"
+                 onmouseout="this.style.background='rgba(148,163,184,0.15)';">
           Clear
         </button>
-        <button id="dir-panel-close"
-          style="background:none; border:none; color:#94a3b8; font-size:22px;
-                 cursor:pointer; line-height:1; padding:0 2px;">×</button>
+        <button id="dir-panel-minimize" title="Minimize"
+          style="background:#4a5568; border:1px solid #64748b; color:#ffffff;
+                 font-size:16px; cursor:pointer; width:24px; height:24px; display:flex;
+                 align-items:center; justify-content:center; border-radius:4px; line-height:1;
+                 transition: background 0.2s, border-color 0.2s, color 0.2s;"
+                 onmouseover="this.style.background='#64748b'; this.style.borderColor='#94a3b8';"
+                 onmouseout="this.style.background='#4a5568'; this.style.borderColor='#64748b';">
+          −</button>
+        <button id="dir-panel-close" title="Close"
+          style="background:#4a5568; border:1px solid #64748b; color:#ffffff;
+                 font-size:16px; cursor:pointer; width:24px; height:24px; display:flex;
+                 align-items:center; justify-content:center; border-radius:4px; line-height:1;
+                 transition: background 0.2s, border-color 0.2s, color 0.2s;"
+                 onmouseover="this.style.background='#64748b'; this.style.borderColor='#94a3b8';"
+                 onmouseout="this.style.background='#4a5568'; this.style.borderColor='#64748b';">
+          ×</button>
       </div>
     </div>
 
     <!-- Mode tabs -->
-    <div id="dir-tabs" style="display:flex; padding:10px 12px 0; gap:6px; flex-shrink:0; overflow-x:auto;
+    <div id="dir-tabs" style="display:flex; padding:8px 10px 0; gap:4px; flex-shrink:0; overflow-x:auto;
                                scrollbar-width:none;">
       <button class="dir-tab dir-tab--active" data-mode="TRANSIT"
         onclick="window._directionsSelectMode('TRANSIT')"
-        style="display:flex; flex-direction:column; align-items:center; padding:8px 12px;
+        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
                border-radius:5px; border:1px solid rgba(59,130,246,0.5);
-               background:rgba(59,130,246,0.15); color:#93c5fd;
+               background:rgba(59,130,246,0.25); color:var(--brand-blue);
                cursor:pointer; white-space:nowrap; flex-shrink:0;">
-        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#F3F3F3"><path d="M297.5-422.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Zm532.5-93Q880-471 880-400v160q0 33-23.5 56.5T800-160l80 80H520l80-80q-33 0-56.5-23.5T520-240v-160q0-71 50-115.5T700-560q80 0 130 44.5ZM679-291q-9 9-9 21t9 21q9 9 21 9t21-9q9-9 9-21t-9-21q-9-9-21-9t-21 9Zm-91-149q-4 9-6 19t-2 21v40h240v-40q0-11-2-21t-6-19H588ZM480-880q172 0 246 37t74 123v96q-18-6-38-9.5t-42-5.5v-41H240v120h260q-16 17-27.5 37T453-480H240v120q0 33 23.5 56.5T320-280h120v80H320v40q0 17-11.5 28.5T280-120h-40q-17 0-28.5-11.5T200-160v-82q-18-20-29-44.5T160-340v-380q0-83 77-121.5T480-880Zm2 120h224-448 224Zm-224 0h448q-15-17-64.5-28.5T482-800q-107 0-156.5 12.5T258-760Zm195 280Z"/></svg></span>
+        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M297.5-422.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Zm532.5-93Q880-471 880-400v160q0 33-23.5 56.5T800-160l80 80H520l80-80q-33 0-56.5-23.5T520-240v-160q0-71 50-115.5T700-560q80 0 130 44.5ZM679-291q-9 9-9 21t9 21q9 9 21 9t21-9q9-9 9-21t-9-21q-9-9-21-9t-21 9Zm-91-149q-4 9-6 19t-2 21v40h240v-40q0-11-2-21t-6-19H588ZM480-880q172 0 246 37t74 123v96q-18-6-38-9.5t-42-5.5v-41H240v120h260q-16 17-27.5 37T453-480H240v120q0 33 23.5 56.5T320-280h120v80H320v40q0 17-11.5 28.5T280-120h-40q-17 0-28.5-11.5T200-160v-82q-18-20-29-44.5T160-340v-380q0-83 77-121.5T480-880Zm2 120h224-448 224Zm-224 0h448q-15-17-64.5-28.5T482-800q-107 0-156.5 12.5T258-760Zm195 280Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Transit</span>
-        <span id="dir-time-TRANSIT" style="font-size:10px; color:#94a3b8; margin-top:1px;">…</span>
+        <span id="dir-time-TRANSIT" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
       </button>
       <button class="dir-tab" data-mode="WALKING"
         onclick="window._directionsSelectMode('WALKING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:8px 12px;
-               border-radius:5px; border:1px solid rgba(148,163,184,0.2);
-               background:rgba(15,23,42,0.6); color:#94a3b8;
+        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
+               border-radius:5px; border:1px solid var(--panel-border);
+               background:var(--card-bg); color:currentColor;
                cursor:pointer; white-space:nowrap; flex-shrink:0;">
-        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#F3F3F3"><path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/></svg></span>
+        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Walk</span>
-        <span id="dir-time-WALKING" style="font-size:10px; color:#94a3b8; margin-top:1px;">…</span>
+        <span id="dir-time-WALKING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
       </button>
       <button class="dir-tab" data-mode="DRIVING"
         onclick="window._directionsSelectMode('DRIVING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:8px 12px;
-               border-radius:5px; border:1px solid rgba(148,163,184,0.2);
-               background:rgba(15,23,42,0.6); color:#94a3b8;
+        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
+               border-radius:5px; border:1px solid var(--panel-border);
+               background:var(--card-bg); color:currentColor;
                cursor:pointer; white-space:nowrap; flex-shrink:0;">
-        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#F3F3F3"><path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm-32 80v200-200Zm100 160q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Zm-460 40h560v-200H200v200Z"/></svg></span>
+        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm-32 80v200-200Zm100 160q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Zm-460 40h560v-200H200v200Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Drive</span>
-        <span id="dir-time-DRIVING" style="font-size:10px; color:#94a3b8; margin-top:1px;">…</span>
+        <span id="dir-time-DRIVING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
       </button>
       <button class="dir-tab" data-mode="BICYCLING"
         onclick="window._directionsSelectMode('BICYCLING')"
-        style="display:flex; flex-direction:column; align-items:center; padding:8px 12px;
-               border-radius:5px; border:1px solid rgba(148,163,184,0.2);
-               background:rgba(15,23,42,0.6); color:#94a3b8;
+        style="display:flex; flex-direction:column; align-items:center; padding:6px 10px;
+               border-radius:5px; border:1px solid var(--panel-border);
+               background:var(--card-bg); color:currentColor;
                cursor:pointer; white-space:nowrap; flex-shrink:0;">
-        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#F3F3F3"><path d="M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-12-11-18-25.5t-6-30.5q0-16 6.5-30.5T312-624l112-112q12-12 27.5-18t32.5-6q17 0 32.5 6t27.5 18l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z"/></svg></span>
+        <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-12-11-18-25.5t-6-30.5q0-16 6.5-30.5T312-624l112-112q12-12 27.5-18t32.5-6q17 0 32.5 6t27.5 18l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Bike</span>
-        <span id="dir-time-BICYCLING" style="font-size:10px; color:#94a3b8; margin-top:1px;">…</span>
+        <span id="dir-time-BICYCLING" style="font-size:10px; color:var(--text-muted); margin-top:1px;">…</span>
       </button>
     </div>
 
     <!-- Route list -->
     <div id="dir-route-list"
-      style="overflow-y:auto; padding:10px 12px 16px; flex:1; scrollbar-width:thin;
-             scrollbar-color:rgba(148,163,184,0.3) transparent;">
-      <div style="text-align:center; color:#64748b; padding:24px 0; font-size:13px;">
+      style="overflow-y:auto; padding:8px 10px 12px; flex:1; scrollbar-width:thin;
+             scrollbar-color:var(--panel-border) transparent;">
+      <div style="text-align:center; color:var(--text-muted); padding:24px 0; font-size:13px;">
         Fetching routes…
       </div>
     </div>
@@ -2252,7 +2164,7 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     // Reset route list to default message
     const listEl = panel.querySelector('#dir-route-list');
     if (listEl) {
-      listEl.innerHTML = `<div style="text-align:center; color:#64748b; padding:24px 0; font-size:13px;">
+      listEl.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:24px 0; font-size:13px;">
         Select a travel mode above to see routes.
       </div>`;
     }
@@ -2263,9 +2175,17 @@ function _buildDirectionsPanel(label, destLat, destLng) {
       const isTransit = t.dataset.mode === 'TRANSIT';
       t.classList.toggle('dir-tab--active', isTransit);
       t.style.border     = isTransit ? '1px solid rgba(59,130,246,0.6)' : '1px solid rgba(148,163,184,0.2)';
-      t.style.background = isTransit ? 'rgba(59,130,246,0.22)'          : 'rgba(15,23,42,0.6)';
-      t.style.color      = isTransit ? '#93c5fd'                        : '#94a3b8';
+      t.style.background = isTransit ? 'rgba(59,130,246,0.22)'          : 'var(--card-bg)';
+      t.style.color      = isTransit ? 'var(--brand-blue)'              : 'var(--text-muted)';
     });
+  });
+
+  // Minimize button logic
+  const minBtn = panel.querySelector('#dir-panel-minimize');
+  minBtn.addEventListener('click', () => {
+    const isMin = panel.classList.toggle('minimized');
+    minBtn.textContent = isMin ? '+' : '−';
+    minBtn.title = isMin ? 'Expand' : 'Minimize';
   });
 }
 
@@ -2290,15 +2210,15 @@ function _updateModeTab(modeKey, response, mode) {
 function _polylineOpts(modeKey, fallbackColor) {
   if (modeKey === 'WALKING') {
     return {
-      strokeColor:   '#3b82f6',
+      strokeColor:   '#60a5fa',
       strokeOpacity: 0,           // hide the solid line
-      strokeWeight:  4,
+      strokeWeight:  5,
       icons: [{
         icon: {
           path:         google.maps.SymbolPath.CIRCLE,
-          fillColor:    '#3b82f6',
+          fillColor:    '#60a5fa',
           fillOpacity:  1,
-          strokeColor:  '#3b82f6',
+          strokeColor:  '#60a5fa',
           strokeOpacity:1,
           scale:        3
         },
@@ -2340,7 +2260,7 @@ function _showRouteList(results, modeKey, origin, destination) {
   const entry = results[modeKey];
   if (!entry) {
     listEl.innerHTML = `
-      <div style="text-align:center; color:#ef4444; padding:20px 0; font-size:13px;">
+      <div style="text-align:center; color:var(--brand-pink); padding:20px 0; font-size:13px;">
         No routes available for this mode.
       </div>`;
     return;
@@ -2420,9 +2340,9 @@ function _showRouteList(results, modeKey, origin, destination) {
     const card = document.createElement('div');
     card.className = 'dir-route-card';
     card.style.cssText = `
-      padding:12px 14px;
-      margin-bottom:8px;
-      background:${isBest ? 'rgba(59,130,246,0.1)' : 'rgba(15,23,42,0.5)'};
+      padding:10px 12px;
+      margin-bottom:6px;
+      background:${isBest ? 'rgba(59,130,246,0.1)' : 'var(--card-bg)'};
       border:1px solid ${isBest ? 'rgba(59,130,246,0.35)' : 'rgba(148,163,184,0.15)'};
       border-radius:5px;
       cursor:pointer;
@@ -2434,10 +2354,10 @@ function _showRouteList(results, modeKey, origin, destination) {
           <div style="display:flex; align-items:center; gap:6px;">
             ${isBest ? `<span style="font-size:10px; background:${color}; color:#0f172a;
                           font-weight:700; padding:1px 7px; border-radius:999px;">Best</span>` : ''}
-            <span style="font-size:18px; font-weight:700; color:#f1f5f9;">${duration}</span>
-            <span style="font-size:12px; color:#94a3b8;">${distance}</span>
+            <span style="font-size:16px; font-weight:700; color:var(--heading-color);">${duration}</span>
+            <span style="font-size:12px; color:var(--text-muted); white-space:normal;">${distance}</span>
           </div>
-          ${summary ? `<div style="font-size:12px; color:#64748b; margin-top:2px;">via ${summary}</div>` : ''}
+          ${summary ? `<div style="font-size:11px; color:var(--text-muted); margin-top:1px; white-space:normal; line-height:1.2;">via ${summary}</div>` : ''}
           ${stepsHtml}
         </div>
         <button class="dir-go-btn"
@@ -2445,7 +2365,7 @@ function _showRouteList(results, modeKey, origin, destination) {
           style="flex-shrink:0; border:none; border-radius:999px; background:${color};
                  color:#0f172a; font-weight:700; font-size:12px; padding:7px 14px;
                  cursor:pointer; white-space:nowrap;"
-          onclick="window._selectRoute(${idx})">
+          onclick="event.stopPropagation(); window._selectRoute(${idx})">
           Go
         </button>
       </div>
@@ -2550,14 +2470,14 @@ function _buildItinerary(route, modeKey, color) {
   wrap.className = 'dir-itinerary';
   wrap.style.cssText = `
     margin: -4px 0 8px 0;
-    padding: 14px 14px 14px 14px;
-    background: rgba(15,23,42,0.7);
+    padding: 10px 12px;
+    background: var(--card-bg);
     border: 1px solid rgba(148,163,184,0.18);
     border-top: none;
-    border-radius: 0 0 12px 12px;
-    font-size: 12px;
+    border-radius: 0 0 8px 8px;
+    font-size: 11px;
     color: #cbd5e1;
-    line-height: 1.5;
+    line-height: 1.4;
   `;
 
   const colors = { TRANSIT:'#65FE08', WALKING:'#3b82f6', DRIVING:'#FE1CCF', BICYCLING:'#F3FF00' };
@@ -2566,13 +2486,13 @@ function _buildItinerary(route, modeKey, color) {
   const dep = leg.departure_time?.text || '';
   const arr = leg.arrival_time?.text   || '';
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;';
+  header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;';
   header.innerHTML = `
-    <span style="font-weight:700; font-size:13px; color:#f1f5f9;">Step-by-step itinerary</span>
+    <span style="font-weight:700; font-size:12px; color:var(--heading-color);">Itinerary</span>
     <div style="display:flex; align-items:center; gap:8px;">
-      ${dep && arr ? `<span style="font-size:11px; color:#64748b;">${dep} → ${arr}</span>` : ''}
+      ${dep && arr ? `<span style="font-size:10px; color:var(--text-muted);">${dep} → ${arr}</span>` : ''}
       <button class="dir-itinerary-clear"
-        style="background:none; border:1px solid rgba(148,163,184,0.3); color:#94a3b8;
+        style="background:none; border:1px solid var(--panel-border); color:var(--text-muted);
                font-size:11px; font-weight:600; border-radius:999px; padding:3px 9px;
                cursor:pointer; white-space:nowrap; line-height:1.4;">
         Clear
@@ -2614,18 +2534,18 @@ function _buildItinerary(route, modeKey, color) {
       const dist = step.distance?.text  || '';
 
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex; gap:10px; margin-bottom:10px;';
+      row.style.cssText = 'display:flex; gap:10px; margin-bottom:8px;';
       row.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:20px;">
-          <div style="width:20px; height:20px; border-radius:50%;
+          <div style="width:18px; height:18px; border-radius:50%;
                       background:rgba(34,197,94,0.18); border:1.5px solid #22c55e;
-                      display:flex; align-items:center; justify-content:center;
+                      display:flex; align-items:center; justify-content:center; flex-shrink:0;
                       font-size:10px;">🚶</div>
           ${!isLast ? `<div style="width:2px; flex:1; background:rgba(148,163,184,0.2); margin:3px 0;"></div>` : ''}
         </div>
         <div style="flex:1; padding-top:1px;">
-          <div style="color:#e2e8f0;">${instructions}</div>
-          <div style="color:#64748b; font-size:11px; margin-top:2px;">${[dur, dist].filter(Boolean).join(' · ')}</div>
+          <div style="color:var(--text-main);">${instructions}</div>
+          <div style="color:var(--text-muted); font-size:11px; margin-top:2px;">${[dur, dist].filter(Boolean).join(' · ')}</div>
         </div>
       `;
       wrap.appendChild(row);
@@ -2650,25 +2570,25 @@ function _buildItinerary(route, modeKey, color) {
 
       // ── Board station ──
       const boardRow = document.createElement('div');
-      boardRow.style.cssText = 'display:flex; gap:10px; margin-bottom:6px;';
+      boardRow.style.cssText = 'display:flex; gap:10px; margin-bottom:4px;';
       boardRow.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:20px;">
-          <div style="width:20px; height:20px; border-radius:50%;
+          <div style="width:18px; height:18px; border-radius:50%;
                       background:${lineColor}; border:2px solid ${lineColor};
-                      display:flex; align-items:center; justify-content:center;
-                      font-size:10px; color:${lineText}; font-weight:700;">
-            ${emoji}
+                      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+                      font-size:9px; color:${lineText}; font-weight:700;">
+            ${emoji} 
           </div>
           <div style="width:2px; flex:1; background:${lineColor}; opacity:0.5; margin:3px 0;"></div>
         </div>
         <div style="flex:1; padding-top:1px;">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-            <span style="color:#f1f5f9; font-weight:600;">Board at ${boardStop}</span>
+            <span style="color:var(--heading-color); font-weight:600;">Board at ${boardStop}</span>
             <span style="padding:1px 8px; border-radius:999px; background:${lineColor};
-                         color:${lineText}; font-size:11px; font-weight:700;">${emoji} ${lineName}</span>
+                         color:${lineText}; font-size:10px; font-weight:700;">${lineName}</span>
           </div>
-          ${headsign ? `<div style="color:#94a3b8; font-size:11px; margin-top:2px;">Direction: ${headsign}</div>` : ''}
-          ${stepDep   ? `<div style="color:#64748b; font-size:11px;">Departs ${stepDep}</div>` : ''}
+          ${headsign ? `<div style="color:var(--text-muted); font-size:11px; margin-top:2px;">Direction: ${headsign}</div>` : ''}
+          ${stepDep   ? `<div style="color:var(--text-muted); font-size:11px;">Departs ${stepDep}</div>` : ''}
         </div>
       `;
       wrap.appendChild(boardRow);
@@ -2685,20 +2605,20 @@ function _buildItinerary(route, modeKey, color) {
         const dur = step.duration?.text || '';
 
         const toggleRow = document.createElement('div');
-        toggleRow.style.cssText = 'display:flex; gap:10px; margin-bottom:6px;';
+        toggleRow.style.cssText = 'display:flex; gap:10px; margin-bottom:4px;';
         toggleRow.innerHTML = `
           <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:20px;">
             <div style="width:2px; flex:1; background:${lineColor}; opacity:0.5;"></div>
           </div>
           <div style="flex:1;">
-            <a id="${toggleId}-btn" href="#"
-               style="color:#60a5fa; font-size:11px; font-weight:500;
+            <a id="${toggleId}-btn" href="javascript:void(0)"
+               style="color:var(--brand-blue); font-size:11px; font-weight:500;
                       text-decoration:underline; cursor:pointer; display:inline-block; padding:2px 0;">
               ${stopCount} intermediate stop${stopCount !== 1 ? 's' : ''}${dur ? ` (${dur})` : ''}
             </a>
             <ol id="${toggleId}-list"
               style="display:none; margin:6px 0 2px 0; padding-left:14px;
-                     color:#94a3b8; font-size:11px; line-height:1.8; list-style:disc;">
+                     color:var(--text-muted); font-size:11px; line-height:1.8; list-style:disc;">
               ${midStops.map(s => `<li>${s.name}</li>`).join('')}
             </ol>
           </div>
@@ -2728,20 +2648,20 @@ function _buildItinerary(route, modeKey, color) {
         const toggleId = `stops-${stepIdx}-${Math.random().toString(36).substr(2,5)}`;
 
         const countRow = document.createElement('div');
-        countRow.style.cssText = 'display:flex; gap:10px; margin-bottom:6px;';
+        countRow.style.cssText = 'display:flex; gap:10px; margin-bottom:4px;';
         countRow.innerHTML = `
           <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:20px;">
             <div style="width:2px; flex:1; background:${lineColor}; opacity:0.4;
                         border-left:2px dashed ${lineColor};"></div>
           </div>
-          <div style="flex:1; padding-top:4px;">
-            <a id="${toggleId}-btn" href="#"
-               style="color:#60a5fa; font-size:11px; font-weight:500;
+          <div style="flex:1; padding-top:2px;">
+            <a id="${toggleId}-btn" href="javascript:void(0)"
+               style="color:var(--brand-blue); font-size:11px; font-weight:500;
                       text-decoration:underline; cursor:pointer; display:inline-block;">
               ${count} intermediate stop${count !== 1 ? 's' : ''}${dur ? ` (${dur})` : ''}
             </a>
             <div id="${toggleId}-note"
-              style="display:none; margin-top:4px; font-size:10px; color:#64748b; font-style:italic;">
+              style="display:none; margin-top:4px; font-size:10px; color:var(--text-muted); font-style:italic;">
               Stop names not available for this route.
             </div>
           </div>
@@ -2767,17 +2687,17 @@ function _buildItinerary(route, modeKey, color) {
 
       // ── Arrive station ──
       const alightRow = document.createElement('div');
-      alightRow.style.cssText = 'display:flex; gap:10px; margin-bottom:10px;';
+      alightRow.style.cssText = 'display:flex; gap:10px; margin-bottom:8px;';
       alightRow.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:20px;">
-          <div style="width:14px; height:14px; border-radius:50%;
+          <div style="width:12px; height:12px; border-radius:50%;
                       border:2px solid ${lineColor}; background:#1e293b;
-                      margin:0 3px;"></div>
+                      margin:0 3px; flex-shrink:0;"></div>
           ${!isLast ? `<div style="width:2px; flex:1; background:rgba(148,163,184,0.2); margin:3px 0;"></div>` : ''}
         </div>
         <div style="flex:1; padding-top:1px;">
-          <div style="color:#e2e8f0; font-weight:600;">Arrive at ${alightStop}</div>
-          ${stepArr ? `<div style="color:#64748b; font-size:11px;">Arrives ${stepArr}</div>` : ''}
+          <div style="color:var(--heading-color); font-weight:600;">Arrive at ${alightStop}</div>
+          ${stepArr ? `<div style="color:var(--text-muted); font-size:11px;">Arrives ${stepArr}</div>` : ''}
         </div>
       `;
       wrap.appendChild(alightRow);
@@ -2788,11 +2708,11 @@ function _buildItinerary(route, modeKey, color) {
   const dest = document.createElement('div');
   dest.style.cssText = 'display:flex; gap:10px; align-items:flex-start;';
   dest.innerHTML = `
-    <div style="width:20px; height:20px; border-radius:50%;
+    <div style="width:18px; height:18px; border-radius:50%;
                 background:#ef4444; border:2px solid #f87171;
                 display:flex; align-items:center; justify-content:center;
                 font-size:10px; flex-shrink:0;">📍</div>
-    <div style="flex:1; padding-top:2px; color:#f87171; font-weight:600; font-size:12px;">
+    <div style="flex:1; padding-top:1px; color:#f87171; font-weight:600; font-size:11px;">
       Destination — ${leg.end_address || ''}
     </div>
   `;
@@ -2810,6 +2730,7 @@ function _fmtDuration(seconds) {
 // ─── END DIRECTIONS PANEL ─────────────────────────────────────────────────────
 function setupManualLocationSearch() {
   const addressInput = document.getElementById('manual-address-input');
+  const startBtn     = document.getElementById('start-search-btn');
   const gpsBtn       = document.getElementById('use-device-gps-btn');
   const clearBtn     = document.getElementById('clearLocationBtn');
 
@@ -2820,20 +2741,29 @@ function setupManualLocationSearch() {
     userLocation = { lat, lng };
     addressInput.value = labelText;
     addressInput.style.borderColor = '#22c55e'; // green = confirmed
-    setUserLocationMarker(userLocation, 50);
-    map.setCenter(userLocation);
-    map.setZoom(14);
+    setUserLocationMarker(userLocation, 50, labelText);
+
+    // Find nearest murals and update the global highlighted set
+    const nearest = findNearestMurals(5);
+    highlightedMuralUids = new Set(nearest.map(m => m.uid));
+    
+    // Trigger a re-render so markers turn yellow
+    applyFilters();
+
+    // Calculate bounds to include user and nearest murals so they are "separated clearly"
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(userLocation);
+    nearest.forEach(m => bounds.extend({ lat: m.lat, lng: m.lng }));
+    
+    // Zoom to fit them all comfortably
+    map.fitBounds(bounds, { top: 100, bottom: 100, left: 400, right: 100 });
+    if (map.getZoom() > 16) map.setZoom(16); // Don't zoom in TOO far
+
     renderNearestList(findNearestMurals());
     if (clearBtn) clearBtn.disabled = false;
 
-    // Update sidebar status message
-    const nearestResults = document.getElementById('nearestResults');
-    if (nearestResults) {
-      nearestResults.classList.remove('empty');
-      nearestResults.innerHTML = `<p style="color:#86efac; font-size:12px; margin:0;">
-        ✓ Location set. Click any pin and tap "Directions".
-      </p>`;
-    }
+    // Create visual connections and proper routes
+    drawSearchConnections(userLocation, nearest);
   }
 
   // ── Geocode a free-text address string using the Geocoder API ─────────────
@@ -2899,6 +2829,13 @@ function setupManualLocationSearch() {
     }
   });
 
+  // ── Start button handler ──────────────────────────────────────────────────
+  startBtn?.addEventListener('click', () => {
+    if (addressInput.value && addressInput.value !== 'Looking up address…') {
+      geocodeAddress(addressInput.value);
+    }
+  });
+
   // ── Enter key fallback (user typed without selecting a suggestion) ─────────
   addressInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -2932,7 +2869,8 @@ function setupManualLocationSearch() {
           applyLocation(
             position.coords.latitude,
             position.coords.longitude,
-            "Current Location"
+            "Current Location",
+            "Your GPS Location"
           );
           gpsBtn.textContent = "Use Device GPS";
           gpsBtn.disabled = false;
@@ -2952,6 +2890,7 @@ function setupManualLocationSearch() {
     clearBtn.addEventListener('click', () => {
       addressInput.value = "";
       addressInput.style.borderColor = 'rgba(148,163,184,0.35)';
+      clearSearchConnections();
       clearUserLocation();
       clearBtn.disabled = true;
       const nearestResults = document.getElementById('nearestResults');
@@ -2963,6 +2902,41 @@ function setupManualLocationSearch() {
   }
 }
 
+function setupThemeToggle() {
+  const toggleBtn = document.getElementById('themeToggle');
+  const toggleText = document.getElementById('themeToggleText');
+  if (!toggleBtn || !toggleText) return;
+
+  // Set initial label
+  const isInitiallyLight = document.body.classList.contains('light-mode');
+  toggleText.textContent = isInitiallyLight ? "Dark Mode" : "Light Mode";
+
+  toggleBtn.addEventListener('click', () => {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    toggleText.textContent = isLight ? "Dark Mode" : "Light Mode";
+    
+    // Update map style if map is initialized
+    if (map) {
+      // Force-apply the styles array. 
+      // Note: If using a real Map ID, Cloud Console styles take precedence.
+      map.setOptions({
+        styles: isLight ? LIGHT_MAP_STYLE : DARK_MAP_STYLE,
+        backgroundColor: isLight ? '#f8fafc' : '#000000'
+      });
+    }
+  });
+}
+
+/** Toggles the standard Google Maps navigation UI */
+function setupMapControlsToggle() {
+  const toggle = document.getElementById('toggleMapUI');
+  if (!toggle) return;
+  toggle.addEventListener('change', (e) => {
+    map.setOptions({ disableDefaultUI: !e.target.checked });
+  });
+}
+
 // Expose to global so Google Maps callback can find it
 window.initMap = initMap;
 
@@ -2970,15 +2944,15 @@ window.initMap = initMap;
 // This runs immediately when the script loads, before Google Maps API loads
 // This should be the final block in your file
 (function() {
-  if (typeof initLayoutControls === 'function') {
-    try {
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initLayoutControls);
-      } else {
-        initLayoutControls();
-      }
-    } catch (e) {
-      console.error('Error initializing layout controls early:', e);
-    }
+  const start = () => {
+    if (typeof initLayoutControls === 'function') initLayoutControls();
+    if (typeof setupThemeToggle === 'function') setupThemeToggle();
+    if (typeof setupMapControlsToggle === 'function') setupMapControlsToggle();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
   }
 })();

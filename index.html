@@ -15,6 +15,11 @@
         </button>
         <header class="sidebar-header">
           <img src="ThriveCollective_BlackLogoHorizontal.png" alt="Thrive Collective" class="logo" />
+          <button id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode">
+            <span class="sun-icon">☀️</span>
+            <span class="moon-icon">🌙</span>
+            <span id="themeToggleText">Light Mode</span>
+          </button>
         </header>
 
         <section class="utility-panel">
@@ -23,6 +28,7 @@
           </div>
           <input id="manual-address-input" type="text" placeholder="Enter your address or zip code…" class="address-input" autocomplete="off" />
           <div class="location-actions">
+            <button id="start-search-btn" class="primary-btn">Start</button>
             <button id="use-device-gps-btn" class="ghost-btn">Use Device GPS</button>
             <button id="clearLocationBtn" class="ghost-btn">Clear</button>
           </div>
@@ -34,8 +40,8 @@
             <label>Mural View — <span id="muralViewLabel">100%</span></label>
             <input type="range" id="muralViewSlider" min="10" max="100" step="5" value="100" class="mural-view-slider" />
           </div>
-          <div class="filter-group" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
-            <label style="display: flex; align-items: center; cursor: pointer; color: white;">
+          <div class="filter-group" style="margin-top: 15px; border-top: 1px solid var(--panel-border); padding-top: 15px;">
+            <label style="display: flex; align-items: center; cursor: pointer; color: var(--text-main);">
               <input type="checkbox" id="toggleDistricts" checked style="margin-right: 10px; width: 18px; height: 18px;">
               Show Council Districts
             </label>
@@ -120,7 +126,7 @@
     <!-- Map logic -->
     <script src="js/map.js"></script>
 
-    <!-- Google Maps JavaScript API -->
-    <script async="" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDf_8CxcMnNxWSpk-vUU5wC0Qog4SUVeM&amp;libraries=places&amp;callback=initMap"></script>
-  </body>
+    <!-- Google Maps JavaScript API (Added 'marker' library) -->
+    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC-v4faenXb2Q89wwaELdo92__nzS6StRo&libraries=places,marker&callback=initMap&loading=async"></script>
+</body>
 </html>
