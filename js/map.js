@@ -17,7 +17,6 @@ let userLocationMarker = null;
 let userAccuracyCircle = null;
 let curatedTours = [];
 let searchInfoWindow = null; // Dedicated info window for search results
-let highlightedMuralUids = new Set();
 let searchConnectionLines = []; // Lines connecting search dot to nearby murals
 let curatedTourStops = new Map();
 let activeTourPolyline = null;
@@ -103,9 +102,6 @@ const LOCATION_OPTIONS = {
   timeout: 10000,
   maximumAge: 0
 };
-const NEAREST_DEFAULT_MESSAGE =
-  "Tap “Find murals near me” to surface the closest murals and walking directions.";
-
 
 // Standard Google Maps light style
 const LIGHT_MAP_STYLE = [
@@ -646,8 +642,8 @@ function createMarkerElement(htmlOrClass, color = null, text = '') {
 /**
  * Creates a vibrant yellow star marker for highlighted/nearest murals.
  */
-function createHighlightedMarkerContent(color = "#fbbf24") {
-  return createMarkerElement('marker-highlight', color);
+function createHighlightedMarkerContent(number, color = "#fbbf24") {
+  return createMarkerElement('marker-highlight', color, number);
 }
 
 function createNumberedMarkerContent(number, color = "#22c55e") {
@@ -709,7 +705,6 @@ function createMarkers(murals) {
   // Regular view: separate tour markers from regular markers
   const regularMurals = [];
   const tourMurals = [];
-  const highlightedMurals = [];
 
   murals.forEach(mural => {
     const stopNumber = tourStopNumbers.get(mural.uid);
@@ -725,12 +720,6 @@ function createMarkers(murals) {
 
  // Create regular markers (will be clustered)
  regularMurals.forEach(mural => {
-    // If this mural is in our "Nearest" highlight list, handle it separately
-    if (highlightedMuralUids.has(mural.uid) && !isTourActive) {
-      highlightedMurals.push(mural); 
-      return; // Skip clustering for this one
-    }
-
    let lat = parseFloat(mural.lat);
    let lng = parseFloat(mural.lng);
 
@@ -773,25 +762,6 @@ function createMarkers(murals) {
     tourMarkers.push(marker);
   });
 
-  // Create non-clustered Highlight markers (Vibrant Gold with a star)
-  highlightedMurals.forEach(mural => {
-    const marker = new google.maps.marker.AdvancedMarkerElement({
-      position: { lat: mural.lat, lng: mural.lng },
-      map: map,
-      title: mural.name,
-      content: createHighlightedMarkerContent("#fbbf24"),
-      zIndex: 1500 // Higher than everything else
-    });
-
-    marker.mural = mural;
-    marker.addListener("click", () => {
-      showMuralPopup(marker);
-    });
-
-    // We track these in tourMarkers so they get cleared on the next refresh
-    tourMarkers.push(marker);
-  });
-
   // Update clusterer with only regular markers
   updateClusterer();
 }
@@ -799,8 +769,7 @@ function createMarkers(murals) {
 // Create custom renderer for blue clusters
 function createClusterRenderer() {
   // Use yellow for clusters if we are currently highlighting nearest murals
-  const isHighlighted = highlightedMuralUids && highlightedMuralUids.size > 0;
-  const clusterColor = isHighlighted ? "#fbbf24" : "#65cccc";
+  const clusterColor = "#65cccc";
 
   return {
     render: ({ count, position }) => {
@@ -1203,13 +1172,12 @@ function applyFilters() {
 
   if (userLocation) {
     const nearest = findNearestMurals(5);
-    // Only update highlights if we aren't in a curated tour mode
     if (!activeFilters.tour || !activeFilters.tour.startsWith(CURATED_TOUR_PREFIX)) {
-        highlightedMuralUids = new Set(nearest.map(m => m.uid));
+      drawSearchConnections(userLocation, nearest);
     } else {
-        highlightedMuralUids.clear();
+      clearSearchConnections();
     }
-    renderNearestList(nearest);
+    renderNearestList(nearest); 
   }
 }
 
@@ -1556,7 +1524,6 @@ function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "")
 
 function clearUserLocation() {
   userLocation = null;
-  highlightedMuralUids.clear();
   applyFilters();
   
   if (userLocationMarker) {
@@ -2022,7 +1989,7 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     position: absolute;
     top: ${sidebarTop}px;
     left: ${sidebarLeft + sidebarWidth + gap}px;
-    width: 330px;
+    width: 280px;
     height: calc(100vh - ${sidebarTop + 16}px);
     background: var(--panel-bg, rgba(17,24,39,0.92));
     border: 1px solid var(--panel-border, rgba(148,163,184,0.16));
@@ -2742,28 +2709,11 @@ function setupManualLocationSearch() {
     addressInput.value = labelText;
     addressInput.style.borderColor = '#22c55e'; // green = confirmed
     setUserLocationMarker(userLocation, 50, labelText);
-
-    // Find nearest murals and update the global highlighted set
-    const nearest = findNearestMurals(5);
-    highlightedMuralUids = new Set(nearest.map(m => m.uid));
     
-    // Trigger a re-render so markers turn yellow
+    // Let applyFilters handle the logic of finding nearest and updating markers
     applyFilters();
 
-    // Calculate bounds to include user and nearest murals so they are "separated clearly"
-    const bounds = new google.maps.LatLngBounds();
-    bounds.extend(userLocation);
-    nearest.forEach(m => bounds.extend({ lat: m.lat, lng: m.lng }));
-    
-    // Zoom to fit them all comfortably
-    map.fitBounds(bounds, { top: 100, bottom: 100, left: 400, right: 100 });
-    if (map.getZoom() > 16) map.setZoom(16); // Don't zoom in TOO far
-
-    renderNearestList(findNearestMurals());
     if (clearBtn) clearBtn.disabled = false;
-
-    // Create visual connections and proper routes
-    drawSearchConnections(userLocation, nearest);
   }
 
   // ── Geocode a free-text address string using the Geocoder API ─────────────

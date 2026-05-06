@@ -174,16 +174,16 @@ body:not(.light-mode) #map-container {
   position: absolute;
   top: clamp(24px, 5vh, 64px);
   left: clamp(16px, 4vw, 56px);
-  width: min(380px, calc(100% - 32px));
+  width: min(320px, calc(100% - 32px));
   max-height: calc(100vh - clamp(32px, 8vh, 96px));
-  padding: 28px 28px 32px;
+  padding: 20px 20px 24px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 5px;
   box-shadow: var(--panel-shadow);
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   overflow-y: auto;
   backdrop-filter: blur(24px);
   z-index: 10;
@@ -290,7 +290,7 @@ body:not(.light-mode) #map-container {
 }
 
 .utility-panel {
-  padding: 16px;
+  padding: 12px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 5px;
   background: var(--card-bg);
@@ -714,7 +714,7 @@ body:not(.light-mode) #map-container {
 
 @media (max-width: 1024px) {
   #sidebar {
-    width: min(420px, calc(100% - 32px));
+    width: min(360px, calc(100% - 32px));
     left: 50%;
     transform: translateX(-50%);
   }
