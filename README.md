@@ -58,6 +58,7 @@ If you're using VS Code, install the "Live Server" extension and click "Go Live"
 ## Features
 
 - Floating, glassmorphic sidebar that keeps filters visible on desktop and slides in on mobile via the floating toggle.
+- **Featured Murals**: A rotating showcase of random murals every time the app loads, with a "Refresh" button to instantly discover new art, helping users find inspiration.
 - "Find murals near me" workflow that leverages browser geolocation to surface the nearest murals, quick centering, and one-tap Google Maps directions.
 - Curated tour cards plus tour filters that combine staff-created routes with any `tour_id` values that already exist in your dataset.
 - Redesigned info windows with distance callouts, quick actions, and support for mobile layouts.
@@ -96,4 +97,3 @@ Update the array, refresh your browser, and the new tour automatically appears i
 - **CORS Error**: Make sure you're running the app from a web server, not by opening the HTML file directly.
 - **CSV Not Loading**: Verify that your Google Sheet is published to the web (File → Share → Publish to web → CSV format) and the URL in `config.js` is correct.
 - **No Markers Showing**: Check that your CSV has columns named `lat`/`latitude` and `lng`/`longitude` with valid coordinates, and a `name`/`mural_name`/`title` column.
-

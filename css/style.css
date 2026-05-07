@@ -83,6 +83,14 @@ body:not(.light-mode) .gm-style-iw-c {
   filter: invert(100%) hue-rotate(180deg) brightness(1.1);
 }
 
+/* ── Un-invert UI controls (Zoom, Street View, etc.) ── */
+body:not(.light-mode) .gmnoprint button,
+body:not(.light-mode) .gm-control-active,
+body:not(.light-mode) .gm-svpc,
+body:not(.light-mode) .gm-fullscreen-control {
+  filter: invert(100%) hue-rotate(180deg);
+}
+
 /* Optimized Dark Mode Map Background */
 body:not(.light-mode) #map-container {
   background: #000000 !important;
@@ -642,6 +650,14 @@ body:not(.light-mode) #map-container {
   padding-top: 20px;
 }
 
+.featured-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 20px;
+}
+
 .toast {
   position: fixed;
   bottom: 30px;
@@ -677,6 +693,11 @@ body:not(.light-mode) #map-container {
   background: rgba(59, 130, 246, 0.1);
   border-color: var(--brand-blue);
   transform: translateX(4px);
+}
+
+.featured-card:hover {
+  border-color: var(--brand-pink) !important;
+  background: rgba(244, 114, 182, 0.1) !important;
 }
 
 .recent-card h4 { margin: 0; font-size: 14px; color: var(--heading-color); }
@@ -878,7 +899,25 @@ body:not(.light-mode) #map-container {
 /* ── Directions panel — floats to the right of the sidebar ─────── */
 #directions-panel {
   /* Positioning is set dynamically in JS to match sidebar's exact coordinates */
-  transition: opacity 0.25s ease, transform 0.25s ease, height 0.3s ease !important;
+  transition: opacity 0.4s ease-in-out, transform 0.25s ease, height 0.3s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  opacity: 0.5; /* Slightly increased for better visibility */
+  pointer-events: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.1); /* Subtle discovery indicator */
+}
+
+/* Subtle outline specifically for Dark Mode discovery when faded */
+body:not(.light-mode) #directions-panel {
+  border-color: rgba(59, 130, 246, 0.4); /* Use brand blue for clearer discovery */
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.15); /* Subtle discovery glow */
+}
+
+#directions-panel:hover,
+#directions-panel:focus-within {
+  opacity: 1; /* Fully visible when hovered or interacting */
+  border-color: var(--panel-border);
+  box-shadow: var(--panel-shadow);
 }
 
 #directions-panel.minimized {

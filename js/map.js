@@ -894,6 +894,55 @@ function renderRecents() {
   });
 }
 
+/** Showcases a few random murals for discovery and provides a 'Surprise Me' option */
+function renderFeaturedMurals() {
+  const container = document.getElementById('featuredMuralsList');
+  if (!container || allMurals.length === 0) return;
+  const refreshBtn = document.getElementById('refreshFeaturedMuralsBtn');
+
+  // Clear previous content in the dynamic list
+  container.innerHTML = '';
+
+  // Get 3 random murals from the full list
+  const shuffled = [...allMurals].sort(() => 0.5 - Math.random());
+  const featured = shuffled.slice(0, 3);
+
+  container.innerHTML = `
+    <button id="surpriseMeBtn" class="primary-btn" style="margin-bottom: 12px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+      <span>🎲</span> Surprise Me!
+    </button>
+  `;
+
+  // Wire up the Surprise Me button to pick a random mural from the entire collection
+  container.querySelector('#surpriseMeBtn').onclick = () => {
+    const randomMural = allMurals[Math.floor(Math.random() * allMurals.length)];
+    focusOnMuralByUid(randomMural.uid);
+  };
+
+  // Wire up the Refresh button to re-render the featured murals
+  if (refreshBtn) {
+    refreshBtn.onclick = () => {
+      renderFeaturedMurals();
+    };
+  }
+
+  featured.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'recent-card featured-card';
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="min-width:0; flex:1;">
+          <h4 style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h4>
+          <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">${m.school || m.borough || ''}</p>
+        </div>
+        <span style="color:var(--brand-pink); flex-shrink:0; font-size:14px;">✨</span>
+      </div>
+    `;
+    card.onclick = () => focusOnMuralByUid(m.uid);
+    container.appendChild(card);
+  });
+}
+
 function showToast(message) {
   const toast = document.getElementById('toast');
   if (!toast) return;
@@ -931,7 +980,15 @@ function renderSavedMurals() {
   savedMurals.forEach(m => {
     const card = document.createElement('div');
     card.className = 'recent-card';
-    card.innerHTML = `<h4>${m.name}</h4><p>${m.school || m.borough || ''}</p>`;
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="min-width:0; flex:1;">
+          <h4 style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h4>
+          <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">${m.school || m.borough || ''}</p>
+        </div>
+        <span style="color:#ef4444; flex-shrink:0; font-size:14px;">❤️</span>
+      </div>
+    `;
     card.onclick = () => focusOnMuralByUid(m.uid);
     container.appendChild(card);
   });
@@ -1069,8 +1126,9 @@ function showMuralPopup(marker) {
 
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
         <button id="${popupId}-save"
-          style="flex:1; border:1px solid ${isSavedInitial ? 'var(--brand-blue)' : 'var(--panel-border)'}; border-radius:999px; background:${isSavedInitial ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}; color:${isSavedInitial ? 'var(--brand-blue)' : 'var(--text-main)'}; font-weight:600; padding:10px 18px; cursor:pointer;">
-          ${isSavedInitial ? 'Saved ✓' : 'Save'}
+          style="flex:1; border:1px solid ${isSavedInitial ? '#ef4444' : 'var(--panel-border)'}; border-radius:999px; background:${isSavedInitial ? 'rgba(239, 68, 68, 0.1)' : 'transparent'}; color:${isSavedInitial ? '#ef4444' : 'var(--text-main)'}; font-weight:600; padding:10px 18px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-family:system-ui,sans-serif;">
+          <span style="font-size: 16px;">${isSavedInitial ? '❤️' : '🤍'}</span>
+          <span>${isSavedInitial ? 'Saved' : 'Save'}</span>
         </button>
         <button id="${popupId}-directions"
           style="flex:1; border:none; border-radius:999px; background:#3b82f6; color:#0f172a; font-weight:600; padding:10px 18px; cursor:pointer; font-size:14px; font-family:system-ui,sans-serif;">
@@ -1147,10 +1205,13 @@ function showMuralPopup(marker) {
     saveBtn?.addEventListener("click", () => {
       toggleSaveMural(m);
       const currentlySaved = savedMurals.some(sm => sm.uid === m.uid);
-      saveBtn.textContent = currentlySaved ? 'Saved ✓' : 'Save';
-      saveBtn.style.borderColor = currentlySaved ? 'var(--brand-blue)' : 'var(--panel-border)';
-      saveBtn.style.background = currentlySaved ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
-      saveBtn.style.color = currentlySaved ? 'var(--brand-blue)' : 'var(--text-main)';
+      saveBtn.innerHTML = `
+        <span style="font-size: 16px;">${currentlySaved ? '❤️' : '🤍'}</span>
+        <span>${currentlySaved ? 'Saved' : 'Save'}</span>
+      `;
+      saveBtn.style.borderColor = currentlySaved ? '#ef4444' : 'var(--panel-border)';
+      saveBtn.style.background = currentlySaved ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
+      saveBtn.style.color = currentlySaved ? '#ef4444' : 'var(--text-main)';
     });
 
     // ── Directions button ─────────────────────────────────────────────────────
@@ -1574,16 +1635,20 @@ function handleLocationError(error) {
 function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "") {
   if (!map) return;
 
+  // Anchor logic: AdvancedMarkerElement anchors the center of the content to the position.
+  // We use translateY(-50%) to shift the marker assembly so the bottom (the red dot) 
+  // rests exactly on the user's coordinate on the map.
   const markerContent = createMarkerElement(`
-    <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none;">
-      <div class="mural-marker-vnode" style="width:20px; height:20px; background:#ef4444; border:3px solid white; border-radius:50%; box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);"></div>
+    <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">
+      <div style="background: #ef4444; color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; border: 2.5px solid white; line-height: 1;">YOU ARE HERE</div>
+      <div class="mural-marker-vnode" style="width:26px; height:26px; background:#ef4444; border:4px solid white; border-radius:50%; box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); flex-shrink: 0;"></div>
     </div>
   `);
 
   if (!userLocationMarker) {
     userLocationMarker = new google.maps.marker.AdvancedMarkerElement({
-      map,
-      zIndex: 3000,
+      map: map,
+      zIndex: 9999,
       content: markerContent
     });
   } else {
@@ -1867,6 +1932,7 @@ if (clearBtn) {
     buildCuratedTours();
     renderRecents();
     renderSavedMurals();
+    renderFeaturedMurals();
 
     if (murals.length === 0) {
       throw new Error("No murals found in CSV. Check that the CSV has valid data with 'mural_title', 'lat', and 'lng' columns.");
@@ -2046,11 +2112,64 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
       const isActive = t.dataset.mode === modeKey;
       t.classList.toggle('dir-tab--active', isActive);
     });
+    
+    // Blur the element to ensure the Mouse-Out transparency can trigger
+    if (document.activeElement) document.activeElement.blur();
 
     _drawMode(results, modeKey, origin, destination);
     _showRouteList(results, modeKey, origin, destination);
   };
 };
+
+/** Makes an element draggable via a handle */
+function _makeElementDraggable(el, handle) {
+  let offsetX = 0, offsetY = 0, initialX = 0, initialY = 0;
+
+  handle.addEventListener('mousedown', dragMouseDown);
+
+  function dragMouseDown(e) {
+    // Don't drag if clicking buttons in the header
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+
+    e.preventDefault();
+    initialX = e.clientX;
+    initialY = e.clientY;
+    
+    const rect = el.getBoundingClientRect();
+    offsetX = initialX - rect.left;
+    offsetY = initialY - rect.top;
+
+    document.addEventListener('mousemove', elementDrag);
+    document.addEventListener('mouseup', closeDragElement);
+    
+    el.style.transition = 'none';
+  }
+
+  function elementDrag(e) {
+    e.preventDefault();
+    let x = e.clientX - offsetX;
+    let y = e.clientY - offsetY;
+
+    // Boundary constraints: Keep the panel within the visible viewport
+    const maxX = window.innerWidth - el.offsetWidth;
+    const maxY = window.innerHeight - el.offsetHeight;
+
+    x = Math.max(0, Math.min(x, maxX));
+    y = Math.max(0, Math.min(y, maxY));
+    
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  }
+
+  function closeDragElement() {
+    document.removeEventListener('mousemove', elementDrag);
+    document.removeEventListener('mouseup', closeDragElement);
+    // Remove inline transition to let CSS handle the Mouse-Out fade
+    el.style.removeProperty('transition');
+  }
+}
 
 /** Inject / reset the directions panel below the map controls */
 function _buildDirectionsPanel(label, destLat, destLng) {
@@ -2089,13 +2208,12 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     overflow: hidden;
     opacity: 0;
     transform: translateX(-8px);
-    transition: opacity 0.25s ease, transform 0.25s ease;
   `;
 
   panel.innerHTML = `
     <!-- Header -->
-    <div style="display:flex; justify-content:space-between; align-items:center;
-                padding:10px 12px 8px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0;">
+    <div id="dir-panel-header" style="display:flex; justify-content:space-between; align-items:center;
+                padding:10px 12px 8px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0; cursor: move;">
       <div>
         <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Directions to</div>
         <div style="font-size:13px; font-weight:600; color:var(--heading-color); margin-top:1px;
@@ -2170,10 +2288,23 @@ function _buildDirectionsPanel(label, destLat, destLng) {
   document.getElementById('app').appendChild(panel);
   directionsPanel = panel;
 
+  // Make it draggable via the header
+  const header = panel.querySelector('#dir-panel-header');
+  if (header) {
+    _makeElementDraggable(panel, header);
+  }
+
   // Trigger slide-in on next frame
   requestAnimationFrame(() => {
     panel.style.opacity   = '1';
     panel.style.transform = 'translateX(0)';
+    // After the initial entrance animation, clear the inline styles 
+    // so the CSS :hover transparency rules can take effect.
+    setTimeout(() => {
+      if (panel) panel.style.removeProperty('opacity');
+      if (panel) panel.style.removeProperty('transition');
+      if (panel) panel.style.removeProperty('box-shadow');
+    }, 400);
   });
 
   // Close button
@@ -2186,7 +2317,8 @@ function _buildDirectionsPanel(label, destLat, destLng) {
   });
 
   // Clear button — resets to default state (removes routes + itinerary, resets tabs)
-  panel.querySelector('#dir-panel-clear').addEventListener('click', () => {
+  panel.querySelector('#dir-panel-clear').addEventListener('click', (e) => {
+    e.currentTarget.blur();
     // Clear drawn routes from map
     routeRenderers.forEach(r => r.setMap(null));
     routeRenderers = [];
@@ -2210,10 +2342,12 @@ function _buildDirectionsPanel(label, destLat, destLng) {
 
   // Minimize button logic
   const minBtn = panel.querySelector('#dir-panel-minimize');
-  minBtn.addEventListener('click', () => {
+  minBtn.addEventListener('click', (e) => {
     const isMin = panel.classList.toggle('minimized');
     minBtn.textContent = isMin ? '+' : '−';
     minBtn.title = isMin ? 'Expand' : 'Minimize';
+    // Blur the button so the panel can fade out when the mouse leaves
+    e.currentTarget.blur();
   });
 }
 
@@ -2313,7 +2447,7 @@ function _showRouteList(results, modeKey, origin, destination) {
     if (modeKey === 'TRANSIT') {
       const chips = leg.steps.map(step => {
         if (step.travel_mode === 'WALKING') {
-          return `<span ...>
+          return `<span style="display:inline-flex; align-items:center; gap:3px; color:var(--text-muted);">
   <svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px" fill="currentColor">
     <path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/>
   </svg>
@@ -2349,7 +2483,7 @@ function _showRouteList(results, modeKey, origin, destination) {
       const dep = leg.departure_time?.text || '';
       const arr = leg.arrival_time?.text || '';
       if (dep && arr) {
-        stepsHtml += `<div style="margin-top:6px; font-size:11px; color:#94a3b8;">
+        stepsHtml += `<div style="margin-top:6px; font-size:11px; color:var(--text-muted);">
                         Departs ${dep} · Arrives ${arr}
                       </div>`;
       }
@@ -2357,7 +2491,7 @@ function _showRouteList(results, modeKey, origin, destination) {
       // Driving / Walking / Biking — show top 3 steps
       const topSteps = leg.steps.slice(0, 3);
       if (topSteps.length) {
-        stepsHtml = `<ol style="margin:8px 0 0 0; padding-left:16px; font-size:11px; color:#94a3b8; line-height:1.5;">
+        stepsHtml = `<ol style="margin:8px 0 0 0; padding-left:16px; font-size:11px; color: var(--text-muted); line-height:1.5;">
           ${topSteps.map(s => `<li>${s.instructions?.replace(/<[^>]+>/g, '') || ''}</li>`).join('')}
           ${leg.steps.length > 3 ? `<li style="list-style:none; margin-left:-16px; color:#60a5fa;">
             + ${leg.steps.length - 3} more steps…</li>` : ''}
@@ -2504,7 +2638,7 @@ function _buildItinerary(route, modeKey, color) {
     border-top: none;
     border-radius: 0 0 8px 8px;
     font-size: 11px;
-    color: #cbd5e1;
+    color: var(--text-main);
     line-height: 1.4;
   `;
 
