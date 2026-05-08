@@ -25,6 +25,7 @@ let modalListenersBound = false;
 let tourStopNumbers = new Map(); // Maps mural UID to stop number for active tour
 let tourMarkers = []; // Separate array for numbered tour markers (not clustered)
 let districtLabels = []; // Global scope so theme toggle can access it
+let activeTourDefinition = null; // Stores the full object of the currently active tour
 // Services for Directions
 let zoomTimeout;
 let directionsService = null;
@@ -341,6 +342,7 @@ function renderTourCards() {
       if (isActive) {
         // ── End tour: clear everything and return to default map ──
         activeFilters.tour = null;
+        activeTourDefinition = null;
         tourStopNumbers.clear();
         // Remove the polyline
         if (activeTourPolyline) {
@@ -356,6 +358,7 @@ function renderTourCards() {
       } else {
         // ── Start tour: activate this tour ──
         activeFilters.tour = prefixedId;
+        activeTourDefinition = tour;
         applyFilters();
       }
 
@@ -524,8 +527,12 @@ function parseCSV(text) {
 }
 
 function getColumnIndex(headerRow, possibleNames) {
-  for (const name of possibleNames) {
-    const idx = headerRow.indexOf(name);
+  const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedHeader = headerRow.map(h => normalize(h));
+  
+  for (const pName of possibleNames) {
+    const target = normalize(pName);
+    const idx = normalizedHeader.indexOf(target);
     if (idx !== -1) return idx;
   }
   return -1;
@@ -695,7 +702,7 @@ function createMarkers(murals) {
 
         marker.mural = mural;
 
-        marker.addListener("click", () => {
+        marker.addListener("gmp-click", () => {
           showMuralPopup(marker);
         });
       }
@@ -738,7 +745,7 @@ function createMarkers(murals) {
    });
 
    marker.mural = mural;
-   marker.addListener("click", () => {
+   marker.addListener("gmp-click", () => {
      showMuralPopup(marker);
    });
 
@@ -757,7 +764,7 @@ function createMarkers(murals) {
 
     marker.mural = mural;
 
-    marker.addListener("click", () => {
+    marker.addListener("gmp-click", () => {
       showMuralPopup(marker);
     });
 
@@ -1001,8 +1008,13 @@ function showMuralPopup(marker) {
   // Create unique ID for this popup's carousel
   const popupId = 'popup-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
   
-  // For now, use single image. If multiple images exist, they can be added to an array
-  const images = m.image_url ? [m.image_url] : [];
+  // Handle multiple images (comma or newline separated) and filter invalid values
+  const images = m.image_url 
+    ? m.image_url.split(/[\n,]+/)
+        .map(url => url.trim())
+        .filter(url => url && url.toLowerCase().startsWith('http'))
+    : [];
+
   let currentImageIndex = 0;
   const isSavedInitial = savedMurals.some(sm => sm.uid === m.uid);
   
@@ -1010,6 +1022,15 @@ function showMuralPopup(marker) {
     userLocation && m.lat && m.lng
       ? formatDistance(calculateDistanceMeters(userLocation, { lat: m.lat, lng: m.lng }))
       : null;
+
+  // Check if there is a tour-specific narrative for this mural
+  let tourNarrative = null;
+  if (activeTourDefinition && activeTourDefinition.detailedStops) {
+    const detailedStop = activeTourDefinition.detailedStops.find(ds => ds.uid === m.uid);
+    if (detailedStop) {
+      tourNarrative = detailedStop.narrative;
+    }
+  }
 
   const html = `
     <div id="${popupId}" style="width:500px; min-width:500px; max-width:500px; font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px; flex-shrink: 0;">
@@ -1036,6 +1057,16 @@ function showMuralPopup(marker) {
           : ""
       }
       
+      <!-- Tour Specific Narrative (Google My Maps Style) -->
+      ${tourNarrative ? `
+        <div class="tour-insight-box">
+          <div style="color: var(--brand-pink); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+            Tour Insight
+          </div>
+          <div style="font-size: 14px; line-height: 1.5; color: var(--text-main); font-style: italic;">"${tourNarrative}"</div>
+        </div>
+      ` : ''}
+
       <!-- Image Carousel -->
       ${images.length > 0 ? `
         <div style="position: relative; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #f3f4f6;">
@@ -1193,6 +1224,30 @@ function showMuralPopup(marker) {
       });
     }
 
+    // ── Carousel Controls ─────────────────────────────────────────────────────
+    if (images.length > 1) {
+      const nextBtn = document.getElementById(`${popupId}-next`);
+      const prevBtn = document.getElementById(`${popupId}-prev`);
+      const imgEl = document.getElementById(`${popupId}-img`);
+
+      if (nextBtn && prevBtn && imgEl) {
+        let currentIndex = 0;
+        
+        nextBtn.addEventListener('click', () => {
+          currentIndex = (currentIndex + 1) % images.length;
+          imgEl.src = images[currentIndex];
+          imgEl.dataset.index = currentIndex;
+        });
+
+        prevBtn.addEventListener('click', () => {
+          currentIndex = (currentIndex - 1 + images.length) % images.length;
+          imgEl.src = images[currentIndex];
+          imgEl.dataset.index = currentIndex;
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const focusBtn = document.getElementById(`${popupId}-focus`);
     focusBtn?.addEventListener("click", () => {
       map.panTo({ lat: m.lat, lng: m.lng });
@@ -1255,6 +1310,48 @@ function showMuralPopup(marker) {
     }
     // ─────────────────────────────────────────────────────────────────────
   }, 100);
+}
+
+/**
+ * Renders a 'My Maps' style itinerary in the sidebar when a tour is active.
+ */
+function renderTourItinerary() {
+  const container = document.getElementById("tourCards");
+  if (!container || !activeTourDefinition) return;
+
+  const tourColor = activeTourDefinition.color || "#3b82f6";
+  
+  let html = `
+    <div class="tour-itinerary-header" style="margin-bottom: 15px;">
+      <button id="backToTours" class="view-all-btn" style="margin-bottom: 10px;">← Back to All Tours</button>
+      <h3 style="color: ${tourColor}; margin: 5px 0;">${activeTourDefinition.name}</h3>
+      <p style="font-size: 13px; opacity: 0.8;">${activeTourDefinition.description}</p>
+    </div>
+    <div class="tour-itinerary-list">
+  `;
+
+  const tourEntry = curatedTourStops.get(activeTourDefinition.id);
+  if (!tourEntry) return;
+  const stops = orderStopsForTour(tourEntry.stops);
+  
+  stops.forEach((stop, idx) => {
+    html += `
+      <div class="tour-itinerary-item" onclick="focusOnMuralByUid('${stop.uid}')">
+        <h4>${idx + 1}. ${stop.name}</h4>
+        <span style="font-size: 11px; color: var(--text-muted);">${stop.school || stop.borough}</span>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+
+  container.querySelector('#backToTours').onclick = () => {
+    activeFilters.tour = null;
+    activeTourDefinition = null;
+    applyFilters();
+    renderTourCards();
+  };
 }
 
 function applyFilters() {
@@ -1321,6 +1418,11 @@ function applyFilters() {
   currentVisibleMurals = filtered;
   updateTourPolyline();  // must run first — rebuilds tourStopNumbers from filtered stops
   createMarkers(filtered); // then markers are drawn using the updated tourStopNumbers
+
+  // If a curated tour is active, render the itinerary instead of cards
+  if (activeTourDefinition) {
+    renderTourItinerary();
+  }
 
   if (userLocation) {
     const nearest = findNearestMurals(5);
@@ -1772,7 +1874,7 @@ function focusOnMuralByUid(uid) {
     if (map.getZoom() < 15) {
       map.setZoom(15);
     }
-    google.maps.event.trigger(marker, "click");
+    google.maps.event.trigger(marker, "gmp-click");
   }
 }
 window.focusOnMuralByUid = focusOnMuralByUid;
@@ -1882,10 +1984,8 @@ if (clearBtn) {
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
       mapId: MAP_ID,
-      // Use an empty array if Map ID is active, as Vector maps ignore styles.
-      // If Map ID is removed, this styles array will take effect immediately.
-      styles: isLight ? LIGHT_MAP_STYLE : DARK_MAP_STYLE,
       disableDefaultUI: false, // Bring back the standard controls
+      mapTypeControl: false,
       zoomControl: true,
       zoomControlOptions: {
         position: google.maps.ControlPosition.LEFT_BOTTOM
@@ -3063,10 +3163,7 @@ function setupThemeToggle() {
     
     // Update map style if map is initialized
     if (map) {
-      // Force-apply the styles array. 
-      // Note: If using a real Map ID, Cloud Console styles take precedence.
       map.setOptions({
-        styles: isLight ? LIGHT_MAP_STYLE : DARK_MAP_STYLE,
         backgroundColor: isLight ? '#f8fafc' : '#000000'
       });
     }

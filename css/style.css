@@ -811,6 +811,30 @@ body:not(.light-mode) #map-container {
   transition: background 0.2s, color 0.2s;
 }
 
+/* Tour Narrative / Itinerary Styles */
+.tour-insight-box {
+  margin: 16px 0;
+  padding: 14px;
+  background: rgba(244, 114, 182, 0.1);
+  border-left: 4px solid var(--brand-pink);
+  border-radius: 4px;
+}
+
+.tour-itinerary-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--panel-border);
+  cursor: pointer;
+}
+
+.tour-itinerary-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tour-itinerary-item h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+
 /* Active tour — End tour button */
 .tour-card button.end-tour {
   background: rgba(239, 68, 68, 0.18);
