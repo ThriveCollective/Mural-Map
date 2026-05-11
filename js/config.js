@@ -15,7 +15,10 @@ window.MURAL_MAP_CONFIG = {
     DEFAULT_ZOOM: 11,
 
     // 4. Map ID from Google Cloud Console (Required for Advanced Markers).
-    MAP_ID: "DEMO_MAP_ID" 
+    MAP_ID: "DEMO_MAP_ID",
+
+    // 5. Geocoding suffix to ensure addresses are found in the correct area.
+    GEOCODE_LOCATION_SUFFIX: ", New York, NY"
   };
   
 // Curated tours that can be extended by Thrive staff.

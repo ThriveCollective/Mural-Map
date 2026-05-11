@@ -40,6 +40,9 @@
             <label>Mural View — <span id="muralViewLabel">100%</span></label>
             <input type="range" id="muralViewSlider" min="10" max="100" step="5" value="100" class="mural-view-slider" />
           </div>
+          <div class="filter-group">
+             <button id="clearAllFiltersBtn" class="ghost-btn" style="width: 100%; margin-top: 5px;">Clear All Filters</button>
+          </div>
           <div class="filter-group" style="margin-top: 15px; border-top: 1px solid var(--panel-border); padding-top: 15px;">
             <label style="display: flex; align-items: center; cursor: pointer; color: var(--text-main);">
               <input type="checkbox" id="toggleDistricts" checked style="margin-right: 10px; width: 18px; height: 18px;">
@@ -56,6 +59,20 @@
             <label for="yearFilter">Year</label>
             <select id="yearFilter" class="filter-select">
               <option value="">All Years</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="artistFilter">Artist</label>
+            <select id="artistFilter" class="filter-select">
+              <option value="">All Artists</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="themeFilter">Theme</label>
+            <select id="themeFilter" class="filter-select">
+              <option value="">All Themes</option>
             </select>
           </div>
 
@@ -90,7 +107,6 @@
           </div>
           <div id="savedMuralsList" class="recent-list">
             <!-- Populated via JS -->
-          </div>
         </section>
 
         <section class="featured-panel">
@@ -159,3 +175,9 @@
     <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDf_8CxcMnNxWSpk-vUU5wC0Qog4SUVeM&libraries=places,marker&callback=initMap&loading=async"></script>
 </body>
 </html>
+
+
+
+
+
+

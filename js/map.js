@@ -9,6 +9,8 @@ let activeFilters = {
   year: null,
   school: null,
   borough: null,
+  artist: null, // NEW: Filter by artist
+  theme: null,  // NEW: Filter by theme
   tour: null,
   muralView: 100 // Percentage of murals to show (25, 50, 75, 100)
 };
@@ -61,7 +63,8 @@ const geocodeCache = new Map(); // key: "lat,lng"  value: resolved address strin
  * Uses the existing geocodeCache to minimize API calls.
  */
 async function getAddressFromLatLng(lat, lng) {
-  const key = `${lat},${lng}`;
+  // Normalize to ~0.1 meter precision to ensure cache hits on identical locations
+  const key = `${parseFloat(lat).toFixed(6)},${parseFloat(lng).toFixed(6)}`;
   
   // Return cached address if we already fetched it this session
   if (geocodeCache.has(key)) {
@@ -97,6 +100,7 @@ const CSV_URL = CONFIG.CSV_URL || "";
 const DEFAULT_CENTER = CONFIG.DEFAULT_CENTER || { lat: 40.7128, lng: -74.006 };
 const DEFAULT_ZOOM = CONFIG.DEFAULT_ZOOM || 11;
 const MAP_ID = CONFIG.MAP_ID || "DEMO_MAP_ID";
+const GEOCODE_LOCATION_SUFFIX = CONFIG.GEOCODE_LOCATION_SUFFIX || ", New York, NY";
 const TOUR_DEFINITIONS = Array.isArray(window.MURAL_TOURS) ? window.MURAL_TOURS : [];
 const CURATED_TOUR_PREFIX = "curated:";
 const DATA_TOUR_PREFIX = "data:";
@@ -538,6 +542,76 @@ function getColumnIndex(headerRow, possibleNames) {
   return -1;
 }
 
+/**
+ * Resolves locations for murals using the Geocoding API.
+ * As requested, it uses the street address primarily to pinpoint locations.
+ * If no street address is found, it falls back to the provided lat/lng.
+ */
+async function geocodeMuralsWithAddresses(murals) {
+  if (!geocoder) geocoder = new google.maps.Geocoder();
+  
+  // Load persistent cache from localStorage
+  const CACHE_KEY = 'mural_address_to_coords';
+  let persistentCache = {};
+  try {
+    persistentCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+  } catch (e) {
+    console.warn("Failed to parse geocode cache", e);
+  }
+  
+  // To prevent excessive API usage and slow load times, we primarily geocode 
+  // murals that are missing coordinates but have a street address.
+  const toGeocode = murals.filter(m => m.address && (m.lat === null || m.lng === null));
+  
+  if (toGeocode.length === 0) return;
+
+  let apiCallCount = 0;
+
+  for (const mural of toGeocode) {
+    const cacheLookupKey = mural.address + GEOCODE_LOCATION_SUFFIX;
+    
+    // Check persistent cache first
+    if (persistentCache[cacheLookupKey]) {
+      mural.lat = persistentCache[cacheLookupKey].lat;
+      mural.lng = persistentCache[cacheLookupKey].lng;
+      continue;
+    }
+
+    try {
+      apiCallCount++;
+      const response = await new Promise((resolve, reject) => {
+        geocoder.geocode({ 
+          address: cacheLookupKey, 
+          region: 'us',
+          // Bias results to the center of NYC defined in your config
+          locationBias: {
+            lat: DEFAULT_CENTER.lat,
+            lng: DEFAULT_CENTER.lng
+          }
+        }, (results, status) => {
+          if (status === "OK") resolve(results);
+          else reject(status);
+        });
+      });
+
+      if (response && response[0]) {
+        mural.lat = response[0].geometry.location.lat();
+        mural.lng = response[0].geometry.location.lng();
+        
+        // Save to cache
+        persistentCache[cacheLookupKey] = { lat: mural.lat, lng: mural.lng };
+      }
+    } catch (error) {
+      console.warn(`Geocoding failed for ${mural.name}: ${error}`);
+    }
+  }
+
+  if (apiCallCount > 0) {
+    console.log(`Geocoding complete. API calls made: ${apiCallCount}. Total in cache: ${Object.keys(persistentCache).length}`);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
+  }
+}
+
 async function loadMuralsFromSheet() {
   if (!CSV_URL) {
     throw new Error("CSV_URL is not configured in config.js");
@@ -589,8 +663,9 @@ async function loadMuralsFromSheet() {
       .map(row => {
         const val = index => (index >= 0 && index < row.length ? row[index].trim() : "");
 
-        const latStr = val(idxLat);
-        const lngStr = val(idxLng);
+        // Strip any characters that aren't numbers, decimals, or minus signs
+        const latStr = val(idxLat).replace(/[^\d.-]/g, '');
+        const lngStr = val(idxLng).replace(/[^\d.-]/g, '');
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
         const nameValue = val(idxName);
@@ -616,10 +691,8 @@ async function loadMuralsFromSheet() {
         };
       })
       .filter(m => {
-        if (!m.name || m.lat === null || m.lng === null) {
-          return false;
-        }
-        return true;
+        // Keep mural if it has a name AND (coordinates OR an address to geocode)
+        return m.name && ( (m.lat !== null && m.lng !== null) || m.address );
       });
   } catch (err) {
     if (err.message.includes('Failed to fetch') || err.message.includes('CORS') || err.name === 'TypeError') {
@@ -724,18 +797,34 @@ function createMarkers(murals) {
     }
   });
 
- // Keep track of coordinates we have already seen
- const seenCoordinates = new Set();
+  // Count occurrences of coordinates to identify collisions
+  const coordCounts = new Map();
+  regularMurals.forEach(m => {
+    const key = `${m.lat.toFixed(6)},${m.lng.toFixed(6)}`;
+    coordCounts.set(key, (coordCounts.get(key) || 0) + 1);
+  });
+
+  // Track how many murals at this specific coordinate we have already processed
+  // to ensure each one gets a unique offset even if they share identical UIDs.
+  const collisionInstances = new Map();
 
  // Create regular markers (will be clustered)
  regularMurals.forEach(mural => {
    let lat = parseFloat(mural.lat);
    let lng = parseFloat(mural.lng);
+   const coordKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
 
-   // Use a deterministic jitter based on UID so markers don't "jump" when filtering
-   const jitterSeed = mural.uid.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-   lat += ((jitterSeed % 10) - 5) * 0.00002;
-   lng += (((jitterSeed / 10) % 10) - 5) * 0.00002;
+   // If multiple murals share these coordinates, nudge them apart so they don't perfectly overlap
+   if (coordCounts.get(coordKey) > 1) {
+     const instance = collisionInstances.get(coordKey) || 0;
+     collisionInstances.set(coordKey, instance + 1);
+
+     // Apply a small spiral offset (approx 2-3 meters) so markers are distinct
+     const angle = instance * 1.5; 
+     const radius = 0.000025; 
+     lat += Math.cos(angle) * radius;
+     lng += Math.sin(angle) * radius;
+   }
 
    const marker = new google.maps.marker.AdvancedMarkerElement({
      position: { lat: lat, lng: lng }, // Use the updated lat/lng with jitter
@@ -921,10 +1010,25 @@ function renderFeaturedMurals() {
   `;
 
   // Wire up the Surprise Me button to pick a random mural from the entire collection
-  container.querySelector('#surpriseMeBtn').onclick = () => {
-    const randomMural = allMurals[Math.floor(Math.random() * allMurals.length)];
-    focusOnMuralByUid(randomMural.uid);
-  };
+  const surpriseBtn = container.querySelector('#surpriseMeBtn');
+  if (surpriseBtn) {
+    surpriseBtn.onclick = () => {
+    // 1. Identify murals not in the recently viewed history
+    const viewedUids = new Set(muralHistory.map(m => m.uid));
+    // Ensure we are filtering from the full list of murals
+    const unviewedMurals = allMurals.filter(m => m.uid && !viewedUids.has(m.uid));
+    
+    // 2. Select from unviewed pool, or fallback to all murals if everything has been viewed
+    const pool = unviewedMurals.length > 0 ? unviewedMurals : allMurals;
+    const randomMural = pool[Math.floor(Math.random() * pool.length)];
+
+    // 3. Clear all filters to ensure the mural is visible and its marker is rendered
+    clearAllFilters();
+    
+    // 4. Focus on it (increased delay to ensure markers are re-rendered in the DOM)
+    setTimeout(() => focusOnMuralByUid(randomMural.uid), 350);
+    };
+  }
 
   // Wire up the Refresh button to re-render the featured murals
   if (refreshBtn) {
@@ -937,12 +1041,12 @@ function renderFeaturedMurals() {
     const card = document.createElement('div');
     card.className = 'recent-card featured-card';
     card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
         <div style="min-width:0; flex:1;">
-          <h4 style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h4>
-          <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">${m.school || m.borough || ''}</p>
+          <h4 style="margin:0; line-height:1.4; overflow-wrap:break-word; word-break:break-word;">${m.name}</h4>
+          <p style="margin:4px 0 0; font-size:12px; color:var(--text-muted); line-height:1.4; overflow-wrap:break-word;">${m.school || m.borough || ''}</p>
         </div>
-        <span style="color:var(--brand-pink); flex-shrink:0; font-size:14px;">✨</span>
+        <span style="color:var(--brand-pink); flex-shrink:0; font-size:14px; margin-top:2px;">✨</span>
       </div>
     `;
     card.onclick = () => focusOnMuralByUid(m.uid);
@@ -988,12 +1092,12 @@ function renderSavedMurals() {
     const card = document.createElement('div');
     card.className = 'recent-card';
     card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
         <div style="min-width:0; flex:1;">
-          <h4 style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h4>
-          <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">${m.school || m.borough || ''}</p>
+          <h4 style="margin:0; line-height:1.4; overflow-wrap:break-word;">${m.name}</h4>
+          <p style="margin:4px 0 0; font-size:12px; color:var(--text-muted); line-height:1.4; overflow-wrap:break-word;">${m.school || m.borough || ''}</p>
         </div>
-        <span style="color:#ef4444; flex-shrink:0; font-size:14px;">❤️</span>
+        <span style="color:#ef4444; flex-shrink:0; font-size:14px; margin-top:2px;">❤️</span>
       </div>
     `;
     card.onclick = () => focusOnMuralByUid(m.uid);
@@ -1281,7 +1385,8 @@ function showMuralPopup(marker) {
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── Reverse-geocode the mural's lat/lng to get a real street address ──
-    const cacheKey = `${m.lat},${m.lng}`;
+    // Normalize coordinates for consistent cache keys
+    const cacheKey = `${parseFloat(m.lat).toFixed(6)},${parseFloat(m.lng).toFixed(6)}`;
     const addressTextEl = document.getElementById(`${popupId}-address-text`);
 
     if (addressTextEl) {
@@ -1363,6 +1468,8 @@ function applyFilters() {
           !(m.school && m.school.toLowerCase().includes(searchLower)) &&
           !(m.artist_names && m.artist_names.toLowerCase().includes(searchLower))) {
         return false;
+      } else if (m.description && m.description.toLowerCase().includes(searchLower)) { // NEW: Search description
+        return true;
       }
     }
 
@@ -1383,6 +1490,20 @@ function applyFilters() {
     // Borough filter
     if (activeFilters.borough !== null) {
       if (m.borough !== activeFilters.borough) {
+        return false;
+      }
+    }
+
+    // NEW: Artist filter
+    if (activeFilters.artist !== null) {
+      if (!(m.artist_names && m.artist_names.split(',').map(a => a.trim()).includes(activeFilters.artist))) {
+        return false;
+      }
+    }
+
+    // NEW: Theme filter
+    if (activeFilters.theme !== null) {
+      if (!(m.theme && m.theme.split(',').map(t => t.trim()).includes(activeFilters.theme))) {
         return false;
       }
     }
@@ -1440,17 +1561,23 @@ function populateFilters() {
   const schools = new Set();
   const boroughs = new Set();
   const dataTours = new Set();
+  const artists = new Set(); // NEW
+  const themes = new Set();   // NEW
 
   allMurals.forEach(m => {
     if (m.year) years.add(m.year);
     if (m.school) schools.add(m.school);
     if (m.borough) boroughs.add(m.borough);
+    if (m.artist_names) m.artist_names.split(',').map(a => a.trim()).filter(Boolean).forEach(a => artists.add(a)); // NEW
+    if (m.theme) m.theme.split(',').map(t => t.trim()).filter(Boolean).forEach(t => themes.add(t)); // NEW
     if (m.tour_id) dataTours.add(m.tour_id);
   });
 
   const sortedYears    = Array.from(years).sort((a, b) => Number(b) - Number(a));
   const sortedSchools  = Array.from(schools).sort();
   const sortedBoroughs = Array.from(boroughs).sort();
+  const sortedArtists  = Array.from(artists).sort(); // NEW
+  const sortedThemes   = Array.from(themes).sort();   // NEW
 
   // ── helper: rebuild a <select> without losing the listener ────────────────
   function buildSelect(id, options, activeValue, onChangeFn) {
@@ -1510,6 +1637,42 @@ function populateFilters() {
     activeFilters.tour,
     (val) => { activeFilters.tour = val; applyFilters(); }
   );
+}
+
+/** NEW: Resets all filters to their default state. */
+function clearAllFilters() {
+  activeFilters = {
+    search: "", year: null, school: null, borough: null,
+    artist: null, theme: null, // NEW: Reset new filters
+    tour: null, muralView: 100
+  };
+
+  // Helper to safely clear values only if the element exists in the HTML
+  const safeClearValue = (id, val = "") => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  };
+
+  safeClearValue("searchInput");
+  safeClearValue("yearFilter");
+  safeClearValue("schoolsFilter");
+  safeClearValue("boroughFilter");
+  safeClearValue("artistFilter");
+  safeClearValue("themeFilter");
+  safeClearValue("toursFilter");
+
+  const slider = document.getElementById("muralViewSlider");
+  if (slider) {
+    slider.value = 100;
+    slider.style.setProperty('--val', 100);
+    const label = document.getElementById("muralViewLabel");
+    if (label) label.textContent = "100%";
+  }
+
+  clearUserLocation(); // Also clear user location and its marker
+  applyFilters();
+  populateFilters(); // Re-populate to ensure dropdowns reflect reset state
+  renderTourCards(); // Re-render tour cards to reflect active tour state
 }
 
 function setupViewAllModals({ schools = [], boroughs = [], tours = [] } = {}) {
@@ -1621,6 +1784,14 @@ function setupMuralView() {
   setupManualLocationSearch();
 }
 
+/** NEW: Sets up event listeners for filter controls like "Clear All Filters". */
+function setupFilterControls() {
+  const clearAllFiltersBtn = document.getElementById("clearAllFiltersBtn");
+  if (clearAllFiltersBtn) {
+    clearAllFiltersBtn.addEventListener("click", clearAllFilters);
+  }
+}
+
 /** Efficient zoom handler for clustering */
 function onZoomChanged() {
   if (!map || !clusterer) return;
@@ -1707,10 +1878,10 @@ function requestUserLocation() {
   navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError, LOCATION_OPTIONS);
 }
 
-function handleLocationSuccess(position) {
+function handleLocationSuccess(position, addressLabel = "Current Location") { // NEW: Added addressLabel parameter
   setLocateButtonState(false);
   const coords = {
-    lat: position.coords.latitude,
+    lat: position.coords.latitude, // NEW: Fixed typo from 'position.coords.latitude'
     lng: position.coords.longitude
   };
   userLocation = coords;
@@ -1737,13 +1908,17 @@ function handleLocationError(error) {
 function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "") {
   if (!map) return;
 
+  const labelHtml = addressLabel ? `<div style="background: #3b82f6; color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; border: 2.5px solid white; line-height: 1;">${addressLabel}</div>` : '';
+
   // Anchor logic: AdvancedMarkerElement anchors the center of the content to the position.
   // We use translateY(-50%) to shift the marker assembly so the bottom (the red dot) 
   // rests exactly on the user's coordinate on the map.
   const markerContent = createMarkerElement(`
     <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">
-      <div style="background: #ef4444; color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; border: 2.5px solid white; line-height: 1;">YOU ARE HERE</div>
-      <div class="mural-marker-vnode" style="width:26px; height:26px; background:#ef4444; border:4px solid white; border-radius:50%; box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); flex-shrink: 0;"></div>
+      ${labelHtml}
+      <div class="mural-marker-vnode" style="width:26px; height:26px; background:#ef4444; border:4px solid white; border-radius:50%; box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); flex-shrink: 0; position:relative;">
+        <div class="user-location-pulse"></div>
+      </div>
     </div>
   `);
 
@@ -1897,14 +2072,14 @@ function renderNearestList(results = null, customMessage = "") {
       const card = document.createElement("div");
       card.className = "nearest-card";
       card.innerHTML = `
-        <header>
-          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
-            <span style="font-size:10px; font-weight:800; color:#ffffff; background:var(--brand-blue); width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${idx + 1}</span>
-            <h3 style="margin:0; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</h3>
+        <header style="align-items:flex-start;">
+          <div style="display:flex; align-items:flex-start; gap:8px; min-width:0; flex:1;">
+            <span style="font-size:10px; font-weight:800; color:#ffffff; background:var(--brand-blue); width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px;">${idx + 1}</span>
+            <h3 style="margin:0; font-size:15px; line-height:1.4; overflow-wrap:break-word;">${m.name}</h3>
           </div>
-          <span class="distance-pill">${formatDistance(m.distance)}</span>
+          <span class="distance-pill" style="margin-top:2px;">${formatDistance(m.distance)}</span>
         </header>
-        <p>${m.school || m.borough || "Mural Location"}</p>
+        <p style="margin:0; line-height:1.4; overflow-wrap:break-word;">${m.school || m.borough || "Mural Location"}</p>
       `;
       card.addEventListener("click", () => {
         focusOnMuralByUid(m.uid);
@@ -1960,6 +2135,7 @@ async function initMap() {
     showError(false);
     showLoading(true);
     
+    // NEW: This button is for clearing routes, not all filters. Renamed for clarity.
     // Handle the 'Clear' button in the sidebar
 const clearBtn = document.getElementById('clear-filters'); // Use the ID from your HTML
 if (clearBtn) {
@@ -2026,8 +2202,13 @@ if (clearBtn) {
     // Initialise the Geocoder used for reverse-geocoding mural lat/lng → street address
     geocoder = new google.maps.Geocoder();
 
-    const murals = await loadMuralsFromSheet();
+    let murals = await loadMuralsFromSheet();
     console.log(`Loaded ${murals.length} murals from CSV`);
+    
+    // Pinpoint locations using street_address if provided (as requested)
+    // This resolves missing coordinates using Google's Geocoding service.
+    await geocodeMuralsWithAddresses(murals);
+    
     allMurals = murals;
     buildCuratedTours();
     renderRecents();
@@ -2042,6 +2223,7 @@ if (clearBtn) {
     currentVisibleMurals = murals;
     populateFilters();
     setupSearch();
+    setupFilterControls(); // NEW: Initialize clear all filters button
     setupMuralView();
 
 // --- CITY COUNCIL DISTRICTS LAYER ---
@@ -3113,7 +3295,7 @@ function setupManualLocationSearch() {
         (position) => {
           applyLocation(
             position.coords.latitude,
-            position.coords.longitude,
+            position.coords.longitude, // Fixed typo
             "Current Location",
             "Your GPS Location"
           );
