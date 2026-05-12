@@ -7,7 +7,7 @@ window.MURAL_MAP_CONFIG = {
     // "https://docs.google.com/spreadsheets/d/XYZ/pub?output=csv"
   CSV_URL:
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQGG7nJALaHS51jJ7BEcfeu-MqPPoTXUo5hkJd1NE-tTn9W76gduRp5dPDoOEsQMFbd8LYm4Oq8-R9_/pub?output=csv",
-  
+      
     // 2. Default map view (New York City center).
     DEFAULT_CENTER: { lat: 40.7128, lng: -74.006 },
   

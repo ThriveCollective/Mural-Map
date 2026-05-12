@@ -35,6 +35,12 @@
           <div id="nearestResults" class="nearest-results empty"></div>
         </section>
 
+        <section class="custom-tour-trigger-panel">
+          <button id="createCustomTourBtn" class="custom-tour-header-btn">
+            <span>✨</span> Create Local Tour
+          </button>
+        </section>
+
         <section class="filters">
           <div class="filter-group">
             <label>Mural View — <span id="muralViewLabel">100%</span></label>
@@ -73,6 +79,13 @@
             <label for="themeFilter">Theme</label>
             <select id="themeFilter" class="filter-select">
               <option value="">All Themes</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="settingFilter">Setting</label>
+            <select id="settingFilter" class="filter-select">
+              <option value="">All Settings</option>
             </select>
           </div>
 
@@ -175,9 +188,3 @@
     <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDf_8CxcMnNxWSpk-vUU5wC0Qog4SUVeM&libraries=places,marker&callback=initMap&loading=async"></script>
 </body>
 </html>
-
-
-
-
-
-

@@ -11,6 +11,7 @@ let activeFilters = {
   borough: null,
   artist: null, // NEW: Filter by artist
   theme: null,  // NEW: Filter by theme
+  setting: null, // NEW: Filter by setting
   tour: null,
   muralView: 100 // Percentage of murals to show (25, 50, 75, 100)
 };
@@ -110,6 +111,12 @@ const LOCATION_OPTIONS = {
   maximumAge: 0
 };
 
+// Regex patterns cached for performance
+const REGEX_IMAGE_SPLIT = /[\n,]+/;
+const REGEX_COORDS_CLEAN = /[^\d.-]/g;
+const REGEX_ARTIST_SPLIT = /,\s*/;
+const REGEX_THEME_SPLIT = /,\s*/;
+
 // Standard Google Maps light style
 const LIGHT_MAP_STYLE = [
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -193,39 +200,8 @@ function groupByLocation(murals) {
 }
 
 function selectStopsForTour(definition) {
-  if (!definition || !allMurals.length) return [];
-
-  const boroughNeedle = definition.borough ? definition.borough.toLowerCase().trim() : null;
-  const keywordNeedles = Array.isArray(definition.keywords)
-    ? definition.keywords.map(k => k.toLowerCase())
-    : [];
-
-  let candidates = allMurals.filter(mural => {
-    // Strict borough matching - must be exact match (case-insensitive)
-    if (boroughNeedle) {
-      const muralBorough = (mural.borough || "").toLowerCase().trim();
-      if (muralBorough !== boroughNeedle) {
-        return false;
-      }
-    }
-    
-    // If keywords are specified, at least one must match
-    if (keywordNeedles.length > 0) {
-      const haystack = `${mural.name} ${mural.school || ""} ${mural.theme || ""} ${mural.borough || ""}`.toLowerCase();
-      return keywordNeedles.some(kw => haystack.includes(kw));
-    }
-    
-    return true;
-  });
-
-  // If no candidates found with keywords, fall back to borough-only (but still strict match)
-  if (!candidates.length && boroughNeedle && keywordNeedles.length > 0) {
-    candidates = allMurals.filter(mural => {
-      const muralBorough = (mural.borough || "").toLowerCase().trim();
-      return muralBorough === boroughNeedle;
-    });
-  }
-
+  const candidates = selectAllMatchingMurals(definition);
+  
   // Group by location to get unique stops
   const uniqueLocationStops = groupByLocation(candidates);
 
@@ -247,12 +223,22 @@ function buildCuratedTours() {
     // Get unique location stops (for polyline)
     const uniqueStops = selectStopsForTour(definition);
     
-    curatedTours.push({ ...definition, stops: uniqueStops });
+    // Determine tour setting based on its murals
+    const settings = allMatching.map(m => (m.setting || "").toLowerCase());
+    const hasInterior = settings.some(s => s.includes("interior") || s.includes("indoor"));
+    const hasExterior = settings.some(s => s.includes("exterior") || s.includes("outdoor") || s === "");
+
+    let tourSetting = "Exterior";
+    if (hasInterior && hasExterior) tourSetting = "Mixed (Public Accessible)";
+    else if (hasInterior) tourSetting = "Interior";
+
+    curatedTours.push({ ...definition, stops: uniqueStops, tourSetting });
     curatedTourStops.set(definition.id, {
       definition,
       stops: uniqueStops, // For polyline - unique locations only
       allMurals: allMatching, // For filtering - all matching murals
-      uidSet: new Set(allMatching.map(m => m.uid)) // For filtering
+      uidSet: new Set(allMatching.map(m => m.uid)), // For filtering
+      tourSetting
     });
   });
 
@@ -303,6 +289,29 @@ function renderTourCards() {
 
   container.innerHTML = "";
 
+  // ── Sync the "Custom Local Tour" Button State at the top ──
+  const customTourId = `${CURATED_TOUR_PREFIX}custom-near-me`;
+  const isCustomActive = activeFilters.tour === customTourId;
+  const topBtn = document.getElementById("createCustomTourBtn");
+  
+  if (topBtn) {
+    topBtn.innerHTML = isCustomActive 
+      ? '<span>🛑</span> End Custom Tour' 
+      : '<span>✨</span> Create Local Tour';
+    topBtn.classList.toggle('active', isCustomActive);
+    
+    topBtn.onclick = () => {
+      if (isCustomActive) { 
+        activeFilters.tour = null; 
+        activeTourDefinition = null; 
+        applyFilters(); 
+        renderTourCards(); 
+      } else { 
+        createCustomTourNearMe(); 
+      }
+    };
+  }
+
   if (!curatedTours.length) {
     const note = document.createElement("p");
     note.className = "tours-panel-subtitle";
@@ -315,19 +324,27 @@ function renderTourCards() {
     const card = document.createElement("article");
     card.className = "tour-card";
 
-    const chipBg     = tour.color || "rgba(59, 130, 246, 0.2)";
+    const chipBg     = tour.color ? `${tour.color}22` : "rgba(59, 130, 246, 0.15)";
     const chipBorder = tour.color || "rgba(59, 130, 246, 0.4)";
     const prefixedId = `${CURATED_TOUR_PREFIX}${tour.id}`;
     const isActive   = activeFilters.tour === prefixedId;
 
     card.innerHTML = `
       <div class="tour-card-head">
-        <h3>${tour.name}</h3>
-        <span class="tour-chip" style="background:${chipBg}; border:1px solid ${chipBorder};">
-          ${tour.stops.length || 0} stops
-        </span>
+        <h3 style="color: var(--heading-color)">${tour.name}</h3>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+          <span class="tour-chip" style="background:${chipBg}; border:1px solid ${chipBorder}; color: var(--text-main);">
+            ${tour.stops.length || 0} stops
+          </span>
+          <span class="tour-chip" style="background: rgba(0,0,0,0.2); border: 1px solid ${
+            tour.tourSetting.includes("Mixed") ? "var(--brand-pink)" : 
+            tour.tourSetting === "Interior" ? "var(--brand-blue)" : "var(--brand-green)"
+          }; color: var(--text-main); font-size: 10px; padding: 2px 8px; white-space: nowrap;">
+            ${tour.tourSetting}
+          </span>
+        </div>
       </div>
-      <p>${tour.description || "Add a description in js/config.js"}</p>
+      <p style="color: var(--text-main); opacity: 0.8;">${tour.description || "Add a description in js/config.js"}</p>
       <footer>
         <span class="tour-card-meta">${tour.borough || "Multi-borough"}</span>
         <button type="button"
@@ -462,6 +479,19 @@ function updateTourPolyline() {
     strokeOpacity: 0.9,
     strokeWeight: 3
   });
+
+  // Fit the map to the bounds of the tour stops
+  const bounds = new google.maps.LatLngBounds();
+  orderedStops.forEach(stop => {
+    bounds.extend({ lat: stop.lat, lng: stop.lng });
+  });
+  
+  map.fitBounds(bounds, {
+    top: 50,    // Padding from the top of the map
+    bottom: 50, // Padding from the bottom of the map
+    left: 400,  // Padding from the left (to account for the sidebar)
+    right: 50   // Padding from the right
+  });
 }
 
 function showLoading(show) {
@@ -565,20 +595,19 @@ async function geocodeMuralsWithAddresses(murals) {
   
   if (toGeocode.length === 0) return;
 
-  let apiCallCount = 0;
-
-  for (const mural of toGeocode) {
+  // Process geocoding in parallel batches to avoid hanging the UI
+  // while respecting Google's rate limits.
+  const geocodePromises = toGeocode.map(async (mural) => {
     const cacheLookupKey = mural.address + GEOCODE_LOCATION_SUFFIX;
     
     // Check persistent cache first
     if (persistentCache[cacheLookupKey]) {
       mural.lat = persistentCache[cacheLookupKey].lat;
       mural.lng = persistentCache[cacheLookupKey].lng;
-      continue;
+      return;
     }
 
     try {
-      apiCallCount++;
       const response = await new Promise((resolve, reject) => {
         geocoder.geocode({ 
           address: cacheLookupKey, 
@@ -602,13 +631,17 @@ async function geocodeMuralsWithAddresses(murals) {
         persistentCache[cacheLookupKey] = { lat: mural.lat, lng: mural.lng };
       }
     } catch (error) {
-      console.warn(`Geocoding failed for ${mural.name}: ${error}`);
+      console.warn(`Geocoding failed for ${mural.name}: ${error}. Status: ${error}`);
     }
-  }
+  });
 
-  if (apiCallCount > 0) {
-    console.log(`Geocoding complete. API calls made: ${apiCallCount}. Total in cache: ${Object.keys(persistentCache).length}`);
+  await Promise.all(geocodePromises);
+
+  const cacheSize = Object.keys(persistentCache).length;
+  if (cacheSize > 0) {
     localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
+    // After geocoding is done, refresh markers to show newly pinpointed locations
+    if (typeof applyFilters === 'function') applyFilters();
   }
 }
 
@@ -646,6 +679,7 @@ async function loadMuralsFromSheet() {
     const idxTourId = getColumnIndex(header, ["tour_id", "tour"]);
     const idxStudents = getColumnIndex(header, ["students_involved", "students"]);
     const idxAddress = getColumnIndex(header, ["address", "street_address", "location_address"]);
+    const idxSetting = getColumnIndex(header, ["location", "setting", "location_type", "interior_exterior", "placement"]);
     const idxNeighborhood = getColumnIndex(header, ["neighborhood", "area", "district"]);
     const idxDescription = getColumnIndex(header, ["mural_description", "description", "about"]);
 
@@ -664,8 +698,8 @@ async function loadMuralsFromSheet() {
         const val = index => (index >= 0 && index < row.length ? row[index].trim() : "");
 
         // Strip any characters that aren't numbers, decimals, or minus signs
-        const latStr = val(idxLat).replace(/[^\d.-]/g, '');
-        const lngStr = val(idxLng).replace(/[^\d.-]/g, '');
+        const latStr = val(idxLat).replace(REGEX_COORDS_CLEAN, '');
+        const lngStr = val(idxLng).replace(REGEX_COORDS_CLEAN, '');
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
         const nameValue = val(idxName);
@@ -685,6 +719,7 @@ async function loadMuralsFromSheet() {
           theme: val(idxTheme),
           tour_id: val(idxTourId),
           students_involved: val(idxStudents),
+          setting: val(idxSetting),
           address: val(idxAddress),
           neighborhood: val(idxNeighborhood),
           description: val(idxDescription)
@@ -778,6 +813,7 @@ function createMarkers(murals) {
         marker.addListener("gmp-click", () => {
           showMuralPopup(marker);
         });
+        tourMarkers.push(marker);
       }
     });
     // Don't create clusterer when tour is active - only show tour markers
@@ -797,33 +833,31 @@ function createMarkers(murals) {
     }
   });
 
-  // Count occurrences of coordinates to identify collisions
-  const coordCounts = new Map();
+  // Pre-count collisions in a single pass for both count and instance tracking
+  const collisionMap = new Map();
   regularMurals.forEach(m => {
-    const key = `${m.lat.toFixed(6)},${m.lng.toFixed(6)}`;
-    coordCounts.set(key, (coordCounts.get(key) || 0) + 1);
+    const coordKey = `${m.lat.toFixed(6)},${m.lng.toFixed(6)}`;
+    if (!collisionMap.has(coordKey)) {
+      collisionMap.set(coordKey, { count: 0, instance: 0 });
+    }
+    collisionMap.get(coordKey).count++;
   });
-
-  // Track how many murals at this specific coordinate we have already processed
-  // to ensure each one gets a unique offset even if they share identical UIDs.
-  const collisionInstances = new Map();
 
  // Create regular markers (will be clustered)
  regularMurals.forEach(mural => {
    let lat = parseFloat(mural.lat);
    let lng = parseFloat(mural.lng);
    const coordKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+   const collision = collisionMap.get(coordKey);
 
    // If multiple murals share these coordinates, nudge them apart so they don't perfectly overlap
-   if (coordCounts.get(coordKey) > 1) {
-     const instance = collisionInstances.get(coordKey) || 0;
-     collisionInstances.set(coordKey, instance + 1);
-
+   if (collision && collision.count > 1) {
      // Apply a small spiral offset (approx 2-3 meters) so markers are distinct
-     const angle = instance * 1.5; 
+     const angle = collision.instance * 1.5; 
      const radius = 0.000025; 
      lat += Math.cos(angle) * radius;
      lng += Math.sin(angle) * radius;
+     collision.instance++;
    }
 
    const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -1113,8 +1147,9 @@ function showMuralPopup(marker) {
   const popupId = 'popup-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
   
   // Handle multiple images (comma or newline separated) and filter invalid values
+  const IMAGE_URL_REGEX = /[\n,]+/;
   const images = m.image_url 
-    ? m.image_url.split(/[\n,]+/)
+    ? m.image_url.split(IMAGE_URL_REGEX)
         .map(url => url.trim())
         .filter(url => url && url.toLowerCase().startsWith('http'))
     : [];
@@ -1232,6 +1267,10 @@ function showMuralPopup(marker) {
           <div>
             <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Borough:</div>
             <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.borough || '—'}</div>
+          </div>
+          <div>
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Location:</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 500;">${m.setting || '—'}</div>
           </div>
         </div>
       </div>
@@ -1422,17 +1461,20 @@ function showMuralPopup(marker) {
  */
 function renderTourItinerary() {
   const container = document.getElementById("tourCards");
+  const subtitle = document.querySelector(".tours-panel-subtitle");
   if (!container || !activeTourDefinition) return;
 
   const tourColor = activeTourDefinition.color || "#3b82f6";
+  if (subtitle) subtitle.style.display = 'none';
   
   let html = `
-    <div class="tour-itinerary-header" style="margin-bottom: 15px;">
-      <button id="backToTours" class="view-all-btn" style="margin-bottom: 10px;">← Back to All Tours</button>
-      <h3 style="color: ${tourColor}; margin: 5px 0;">${activeTourDefinition.name}</h3>
-      <p style="font-size: 13px; opacity: 0.8;">${activeTourDefinition.description}</p>
-    </div>
-    <div class="tour-itinerary-list">
+    <div class="tour-itinerary-wrapper">
+      <div class="tour-itinerary-header" style="border-left: 4px solid ${tourColor};">
+        <button id="backToTours" class="back-link">← Back to All Tours</button>
+        <h3>${activeTourDefinition.name}</h3>
+        <p>${activeTourDefinition.description}</p>
+      </div>
+      <div class="tour-itinerary-list">
   `;
 
   const tourEntry = curatedTourStops.get(activeTourDefinition.id);
@@ -1441,22 +1483,87 @@ function renderTourItinerary() {
   
   stops.forEach((stop, idx) => {
     html += `
-      <div class="tour-itinerary-item" onclick="focusOnMuralByUid('${stop.uid}')">
-        <h4>${idx + 1}. ${stop.name}</h4>
-        <span style="font-size: 11px; color: var(--text-muted);">${stop.school || stop.borough}</span>
+      <div class="tour-itinerary-card" onclick="focusOnMuralByUid('${stop.uid}')">
+        <div class="stop-badge" style="background: ${tourColor}">${idx + 1}</div>
+        <div class="stop-content">
+          <h4>${stop.name}</h4>
+          <p>${stop.school || stop.borough}</p>
+        </div>
       </div>
     `;
   });
 
-  html += `</div>`;
+  html += `</div></div>`;
   container.innerHTML = html;
 
   container.querySelector('#backToTours').onclick = () => {
     activeFilters.tour = null;
     activeTourDefinition = null;
+    if (subtitle) subtitle.style.display = 'block';
     applyFilters();
     renderTourCards();
   };
+}
+
+
+/** Helper: Finds and sorts murals within a specific radius (default 1 mile) */
+function getNearbyTourMurals(origin, radiusMeters, limit = 6) {
+  return allMurals
+    .filter(m => m.lat !== null && m.lng !== null)
+    .map(m => ({ 
+      ...m, 
+      distance: calculateDistanceMeters(origin, { lat: m.lat, lng: m.lng }) 
+    }))
+    .filter(m => m.distance <= radiusMeters)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, limit);
+}
+
+/** Generates the dynamic guided tour */
+function createCustomTourNearMe() {
+  if (!userLocation) {
+    alert("Please set your location first using the search bar or GPS button.");
+    return;
+  }
+
+  // Reset filter state so tour murals aren't hidden by active filters
+  activeFilters.search = "";
+  activeFilters.year = null;
+  activeFilters.school = null;
+  activeFilters.borough = null;
+  activeFilters.artist = null;
+  activeFilters.theme = null;
+  const tourMurals = getNearbyTourMurals(userLocation, 1609.34); // 1 mile
+
+  if (tourMurals.length < 2) {
+    alert(`Only ${tourMurals.length} mural(s) found within 1 mile. Try another location!`);
+    return;
+  }
+
+  const customTour = {
+    id: "custom-near-me",
+    name: "My Local Mural Tour",
+    description: `A walking route through ${tourMurals.length} local murals.`,
+    color: "#fbbf24", 
+    stops: groupByLocation(tourMurals),
+    allMurals: tourMurals,
+    uidSet: new Set(tourMurals.map(m => m.uid))
+  };
+
+  curatedTourStops.set(customTour.id, { definition: customTour, stops: customTour.stops, allMurals: customTour.allMurals, uidSet: customTour.uidSet });
+  activeFilters.tour = `${CURATED_TOUR_PREFIX}${customTour.id}`;
+  activeTourDefinition = customTour;
+  
+  applyFilters();
+  showToast("Custom tour created!");
+
+  // Automatically trigger directions for the new custom tour
+  if (customTour.stops && customTour.stops.length > 0) {
+    window.calculateTourDirections(customTour.stops, customTour.name);
+  }
+
+  const container = document.getElementById("tourCards");
+  if (container) container.scrollIntoView({ behavior: 'smooth' });
 }
 
 function applyFilters() {
@@ -1464,12 +1571,9 @@ function applyFilters() {
     // Search filter
     if (activeFilters.search) {
       const searchLower = activeFilters.search.toLowerCase();
-      if (!m.name.toLowerCase().includes(searchLower) &&
-          !(m.school && m.school.toLowerCase().includes(searchLower)) &&
-          !(m.artist_names && m.artist_names.toLowerCase().includes(searchLower))) {
+      const searchableText = `${m.name} ${m.school || ""} ${m.artist_names || ""} ${m.description || ""} ${m.theme || ""}`.toLowerCase();
+      if (!searchableText.includes(searchLower)) {
         return false;
-      } else if (m.description && m.description.toLowerCase().includes(searchLower)) { // NEW: Search description
-        return true;
       }
     }
 
@@ -1494,16 +1598,24 @@ function applyFilters() {
       }
     }
 
-    // NEW: Artist filter
+    // Artist filter
     if (activeFilters.artist !== null) {
-      if (!(m.artist_names && m.artist_names.split(',').map(a => a.trim()).includes(activeFilters.artist))) {
+      if (!(m.artist_names && m.artist_names.split(REGEX_ARTIST_SPLIT).includes(activeFilters.artist))) {
         return false;
       }
     }
 
-    // NEW: Theme filter
+    // Theme filter
     if (activeFilters.theme !== null) {
-      if (!(m.theme && m.theme.split(',').map(t => t.trim()).includes(activeFilters.theme))) {
+      if (!(m.theme && m.theme.split(REGEX_THEME_SPLIT).includes(activeFilters.theme))) {
+        return false;
+      }
+    }
+
+    // Setting filter
+    if (activeFilters.setting !== null) {
+      const mSetting = (m.setting || "").toLowerCase();
+      if (!mSetting.includes(activeFilters.setting.toLowerCase())) {
         return false;
       }
     }
@@ -1563,13 +1675,15 @@ function populateFilters() {
   const dataTours = new Set();
   const artists = new Set(); // NEW
   const themes = new Set();   // NEW
+  const settings = new Set(); // NEW
 
   allMurals.forEach(m => {
     if (m.year) years.add(m.year);
     if (m.school) schools.add(m.school);
     if (m.borough) boroughs.add(m.borough);
-    if (m.artist_names) m.artist_names.split(',').map(a => a.trim()).filter(Boolean).forEach(a => artists.add(a)); // NEW
-    if (m.theme) m.theme.split(',').map(t => t.trim()).filter(Boolean).forEach(t => themes.add(t)); // NEW
+    if (m.artist_names) m.artist_names.split(REGEX_ARTIST_SPLIT).filter(Boolean).forEach(a => artists.add(a));
+    if (m.theme) m.theme.split(REGEX_THEME_SPLIT).filter(Boolean).forEach(t => themes.add(t));
+    if (m.setting) settings.add(m.setting);
     if (m.tour_id) dataTours.add(m.tour_id);
   });
 
@@ -1578,6 +1692,7 @@ function populateFilters() {
   const sortedBoroughs = Array.from(boroughs).sort();
   const sortedArtists  = Array.from(artists).sort(); // NEW
   const sortedThemes   = Array.from(themes).sort();   // NEW
+  const sortedSettings = Array.from(settings).sort(); // NEW
 
   // ── helper: rebuild a <select> without losing the listener ────────────────
   function buildSelect(id, options, activeValue, onChangeFn) {
@@ -1593,10 +1708,8 @@ function populateFilters() {
       if (value === activeValue) opt.selected = true;
       sel.appendChild(opt);
     });
-    // Attach listener once — remove previous clone trick
-    const fresh = sel.cloneNode(true);
-    sel.parentNode.replaceChild(fresh, sel);
-    fresh.addEventListener("change", (e) => onChangeFn(e.target.value || null));
+    // Remove old listeners and attach new one efficiently
+    sel.onchange = (e) => onChangeFn(e.target.value || null);
   }
 
   // Year
@@ -1623,6 +1736,14 @@ function populateFilters() {
     (val) => { activeFilters.borough = val; applyFilters(); }
   );
 
+  // Setting
+  buildSelect(
+    "settingFilter",
+    sortedSettings.map(s => ({ value: s, label: s })),
+    activeFilters.setting,
+    (val) => { activeFilters.setting = val; applyFilters(); }
+  );
+
   // Tours
   const curatedOpts = curatedTours
     .map(t => ({ value: `${CURATED_TOUR_PREFIX}${t.id}`, label: t.name }))
@@ -1643,7 +1764,7 @@ function populateFilters() {
 function clearAllFilters() {
   activeFilters = {
     search: "", year: null, school: null, borough: null,
-    artist: null, theme: null, // NEW: Reset new filters
+    artist: null, theme: null, setting: null, // NEW: Reset new filters
     tour: null, muralView: 100
   };
 
@@ -1659,6 +1780,7 @@ function clearAllFilters() {
   safeClearValue("boroughFilter");
   safeClearValue("artistFilter");
   safeClearValue("themeFilter");
+  safeClearValue("settingFilter");
   safeClearValue("toursFilter");
 
   const slider = document.getElementById("muralViewSlider");
@@ -2008,37 +2130,6 @@ function findNearestMurals(limit = 4) {
     .slice(0, limit);
 }
 
-function renderNearestList(results = null, customMessage = "") {
-  // We no longer render mural distance cards in the sidebar.
-  // The address search bar is the sole UX entry point.
-  // We only update the container to show status text (errors, location confirmed, etc.)
-  const container = document.getElementById("nearestResults");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  if (customMessage) {
-    // Show error messages (e.g. permission denied) as plain text
-    container.classList.remove("empty");
-    const message = document.createElement("p");
-    message.textContent = customMessage;
-    container.appendChild(message);
-    return;
-  }
-
-  if (results && results.length) {
-    // Location is set — confirm quietly so user knows they can click a pin
-    container.classList.remove("empty");
-    const msg = document.createElement("p");
-    msg.textContent = `Location set. Click any pin and tap "Directions".`;
-    container.appendChild(msg);
-    return;
-  }
-
-  // Default empty state — no message needed, search bar speaks for itself
-  container.classList.add("empty");
-}
-
 function focusOnMuralByUid(uid) {
   // 1. Close the search results summary popup
   if (searchInfoWindow) searchInfoWindow.close();
@@ -2095,6 +2186,18 @@ function renderNearestList(results = null, customMessage = "") {
   container.classList.add("empty");
 }
 
+function clearMapRoutes() {
+  // Clear transit route lines
+  if (routeRenderers && routeRenderers.length > 0) {
+    routeRenderers.forEach(r => r.setMap(null));
+    routeRenderers = [];
+  }
+  if (directionsRenderer) directionsRenderer.setMap(null);
+  
+  // Clear search connection lines
+  clearSearchConnections();
+}
+
 function clearSearchConnections() {
   searchConnectionLines.forEach(line => line.setMap(null));
   searchConnectionLines = [];
@@ -2124,90 +2227,59 @@ function drawSearchConnections(origin, nearestMurals) {
   }
 }
 
-// --- CITY COUNCIL DISTRICTS LAYER ---
-    // 1. Load the official NYC Council District GeoJSON
-    // Around Line 1880 in map.js
-
 // Called by Google Maps JS API via callback parameter in index.html
 async function initMap() {
   try {
     setupNearestControls();
     showError(false);
     showLoading(true);
-    
-    // NEW: This button is for clearing routes, not all filters. Renamed for clarity.
-    // Handle the 'Clear' button in the sidebar
-const clearBtn = document.getElementById('clear-filters'); // Use the ID from your HTML
-if (clearBtn) {
-  clearBtn.addEventListener('click', () => {
-    // 1. Clear the routes
-    clearMapRoutes();
-    
-    // 2. Clear the address input field
-    const addressInput = document.getElementById('address-input');
-    if (addressInput) addressInput.value = "";
-    
-    // 3. Reset userLocation so new directions aren't based on old data
-    userLocation = null;
-    
-    console.log("Map routes and inputs cleared.");
-  });
-}
 
+    // Handle the 'Clear Location' button in the sidebar
+    const clearBtn = document.getElementById('clearLocationBtn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        clearMapRoutes();
+        const addressInput = document.getElementById('manual-address-input');
+        if (addressInput) addressInput.value = "";
+        userLocation = null;
+        clearUserLocation();
+      });
+    }
 
     const isLight = getInitialThemeIsLight();
     map = new google.maps.Map(document.getElementById("map"), {
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
       mapId: MAP_ID,
-      disableDefaultUI: false, // Bring back the standard controls
       mapTypeControl: false,
       zoomControl: true,
-      zoomControlOptions: {
-        position: google.maps.ControlPosition.LEFT_BOTTOM
-      },
+      zoomControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
       scaleControl: true,
       fullscreenControl: true,
       streetViewControl: true,
-      controlSize: 22, // Smaller zoom buttons
+      controlSize: 22,
       backgroundColor: isLight ? '#f8fafc' : '#030712'
     });
     
-    // Single zoom listener for the lifetime of the map
     map.addListener('zoom_changed', onZoomChanged);
 
-    // Initialize Directions Services
     directionsService = new google.maps.DirectionsService();
     directionsRenderer = new google.maps.DirectionsRenderer({
       map: map,
       suppressMarkers: false, 
-      polylineOptions: {
-        strokeColor: "#3b82f6",
-        strokeWeight: 5,
-        strokeOpacity: 0.8
-      }
+      polylineOptions: { strokeColor: "#3b82f6", strokeWeight: 5, strokeOpacity: 0.8 }
     });
-    directionsRenderer.setMap(map);
 
-    // ── Transit layer: shows subway/bus lines on the dark map ──────────────
     const transitLayer = new google.maps.TransitLayer();
     transitLayer.setMap(map);
-    // ──────────────────────────────────────────────────────────────────────
     
-
-    infoWindow = new google.maps.InfoWindow({
-      maxWidth: 500
-    });
-
-    // Initialise the Geocoder used for reverse-geocoding mural lat/lng → street address
+    infoWindow = new google.maps.InfoWindow({ maxWidth: 500 });
     geocoder = new google.maps.Geocoder();
 
     let murals = await loadMuralsFromSheet();
-    console.log(`Loaded ${murals.length} murals from CSV`);
-    
-    // Pinpoint locations using street_address if provided (as requested)
-    // This resolves missing coordinates using Google's Geocoding service.
-    await geocodeMuralsWithAddresses(murals);
+    if (murals.length === 0) {
+      throw new Error("No murals found in CSV.");
+    }
     
     allMurals = murals;
     buildCuratedTours();
@@ -2215,88 +2287,50 @@ if (clearBtn) {
     renderSavedMurals();
     renderFeaturedMurals();
 
-    if (murals.length === 0) {
-      throw new Error("No murals found in CSV. Check that the CSV has valid data with 'mural_title', 'lat', and 'lng' columns.");
-    }
-
-    createMarkers(murals);
+    // Render what we have first, then geocode in the background
     currentVisibleMurals = murals;
+    createMarkers(murals);
     populateFilters();
     setupSearch();
-    setupFilterControls(); // NEW: Initialize clear all filters button
+    setupFilterControls(); 
     setupMuralView();
 
-// --- CITY COUNCIL DISTRICTS LAYER ---
-// 1. Initialize global array for the text labels
-districtLabels = [];
+    // HIDE LOADING SCREEN NOW - geocoding will happen in background
+    showLoading(false);
 
-// 2. Load the GeoJSON file
-map.data.loadGeoJson('City_Council_Districts.geojson');
+    // background geocoding (non-blocking)
+    geocodeMuralsWithAddresses(murals);
 
-// 3. Style the district lines
-map.data.setStyle({
-  fillColor: 'transparent', 
-  strokeColor: '#60a5fa', // Brighter neon blue
-  strokeWeight: 1.5,           
-  clickable: true            
-});
+    // Setup Districts Layer
+    districtLabels = [];
+    map.data.loadGeoJson('City_Council_Districts.geojson');
+    map.data.setStyle({ fillColor: 'transparent', strokeColor: '#60a5fa', strokeWeight: 1.5, clickable: true });
 
-// 4. As each district loads, find its center and add a text number
-map.data.addListener('addfeature', function(e) {
-  // Grab the district number using the correct property name
-  const distNum = e.feature.getProperty('coundist'); 
-  if (!distNum) return; // Skip if no number is found
+    map.data.addListener('addfeature', function(e) {
+      const distNum = e.feature.getProperty('coundist'); 
+      if (!distNum) return;
+      const bounds = new google.maps.LatLngBounds();
+      e.feature.getGeometry().forEachLatLng(ll => bounds.extend(ll));
+      const labelMarker = new google.maps.marker.AdvancedMarkerElement({
+        position: bounds.getCenter(),
+        map: map,
+        content: createMarkerElement(`<div class="mural-marker-vnode" style="color: #FFF; font-size: 11px; font-weight: bold; text-shadow: 0 0 5px #000;">District ${distNum}</div>`)
+      });
+      districtLabels.push(labelMarker);
+    });
 
-  // Calculate the bounding box and center of the district
-  const bounds = new google.maps.LatLngBounds();
-  e.feature.getGeometry().forEachLatLng(function(latLng) {
-    bounds.extend(latLng);
-  });
-  const center = bounds.getCenter();
-
-  // Create a marker at the center with text, but make the pin itself invisible
-  // Using a fixed white color so it doesn't change during theme toggles
-  const labelMarker = new google.maps.marker.AdvancedMarkerElement({
-    position: center,
-    map: map,
-    zIndex: 999,
-    content: createMarkerElement(`
-      <div class="mural-marker-vnode" style="color: #FFFFFF; font-size: 11px; font-weight: bold; pointer-events: none; text-shadow: 0 0 5px rgba(0,0,0,1);">
-        Council District ${distNum}
-      </div>
-    `)
-  });
-
-  // Save it to our array
-  districtLabels.push(labelMarker);
-});
-
-// 5. Update the toggle switch to hide/show both the lines AND the numbers
-const districtToggle = document.getElementById('toggleDistricts');
-if (districtToggle) {
-  districtToggle.addEventListener('change', (e) => {
-    const isVisible = e.target.checked;
-    
-    // Toggle the lines
-    if (isVisible) {
-      map.data.setStyle({ strokeColor: '#60a5fa', strokeWeight: 1.5, strokeOpacity: 1.0, fillColor: 'transparent' });
-    } else {
-      map.data.setStyle({ strokeOpacity: 0, fillOpacity: 0 });
+    const districtToggle = document.getElementById('toggleDistricts');
+    if (districtToggle) {
+      districtToggle.addEventListener('change', (e) => {
+        const isVisible = e.target.checked;
+        map.data.setStyle({ strokeOpacity: isVisible ? 1.0 : 0, strokeColor: '#60a5fa', strokeWeight: 1.5 });
+        districtLabels.forEach(m => m.setMap(isVisible ? map : null));
+      });
     }
 
-    // Toggle the text numbers
-    districtLabels.forEach(marker => {
-      marker.setMap(isVisible ? map : null);
-    });
-  });
-}
-    // Keep default view centered on NYC - don't fit bounds to avoid zooming out to show all markers
-    // The map is already initialized with DEFAULT_CENTER and DEFAULT_ZOOM for NYC
   } catch (err) {
     console.error(err);
-    const errorMessage = err.message || "There was a problem loading mural data. Check the CSV URL or network connection.";
-    showError(true, errorMessage);
-  } finally {
+    showError(true, err.message || "Failed to load mural data.");
     showLoading(false);
   }
 }
@@ -2403,6 +2437,183 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
   };
 };
 
+/**
+ * Calculates walking directions for a multi-stop tour using waypoints.
+ * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
+ */
+window.calculateTourDirections = function(stops, tourName) {
+  if (!userLocation || !stops || stops.length === 0) return;
+  if (infoWindow) infoWindow.close();
+  
+  routeRenderers.forEach(r => r.setMap(null));
+  routeRenderers = [];
+  if (directionsRenderer) directionsRenderer.setMap(null);
+
+  const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
+  // Last stop is the destination
+  const lastStop = stops[stops.length - 1];
+  const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
+  
+  // Intermediate stops are waypoints
+  const waypoints = stops.slice(0, -1).map(s => ({
+    location: new google.maps.LatLng(s.lat, s.lng),
+    stopover: true
+  }));
+
+  _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
+
+  const request = {
+    origin,
+    destination,
+    waypoints,
+    optimizeWaypoints: true,
+    travelMode: google.maps.TravelMode.WALKING
+  };
+
+  directionsService.route(request, (response, status) => {
+    if (status === 'OK') {
+      // Force a "Tour" results object with pink styling
+      const tourMode = { 
+        key: 'WALKING', 
+        label: 'Tour', 
+        color: '#f472b6', 
+        travelMode: google.maps.TravelMode.WALKING 
+      };
+      const results = { WALKING: { response, mode: tourMode } };
+      
+      _updateModeTab('WALKING', response, tourMode);
+      // Indicate other modes aren't active for this tour view
+      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
+      
+      _drawMode(results, 'WALKING', origin, destination);
+      _showRouteList(results, 'WALKING', origin, destination);
+      
+      // Select the walking mode by default for the tour
+      window._directionsSelectMode('WALKING');
+    } else {
+      console.error("Tour directions failed:", status);
+    }
+  });
+};
+
+/**
+ * Calculates walking directions for a multi-stop tour using waypoints.
+ * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
+ */
+window.calculateTourDirections = function(stops, tourName) {
+  if (!userLocation || !stops || stops.length === 0) return;
+  if (infoWindow) infoWindow.close();
+  
+  routeRenderers.forEach(r => r.setMap(null));
+  routeRenderers = [];
+  if (directionsRenderer) directionsRenderer.setMap(null);
+
+  const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
+  // Last stop is the destination
+  const lastStop = stops[stops.length - 1];
+  const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
+  
+  // Intermediate stops are waypoints
+  const waypoints = stops.slice(0, -1).map(s => ({
+    location: new google.maps.LatLng(s.lat, s.lng),
+    stopover: true
+  }));
+
+  _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
+
+  const request = {
+    origin,
+    destination,
+    waypoints,
+    optimizeWaypoints: true,
+    travelMode: google.maps.TravelMode.WALKING
+  };
+
+  directionsService.route(request, (response, status) => {
+    if (status === 'OK') {
+      // Force a "Tour" results object with pink styling
+      const tourMode = { 
+        key: 'WALKING', 
+        label: 'Tour', 
+        color: '#f472b6', 
+        travelMode: google.maps.TravelMode.WALKING 
+      };
+      const results = { WALKING: { response, mode: tourMode } };
+      
+      _updateModeTab('WALKING', response, tourMode);
+      // Indicate other modes aren't active for this tour view
+      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
+      
+      _drawMode(results, 'WALKING', origin, destination);
+      _showRouteList(results, 'WALKING', origin, destination);
+      
+      // Select the walking mode by default for the tour
+      window._directionsSelectMode('WALKING');
+    } else {
+      console.error("Tour directions failed:", status);
+    }
+  });
+};
+
+/**
+ * Calculates walking directions for a multi-stop tour using waypoints.
+ * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
+ */
+window.calculateTourDirections = function(stops, tourName) {
+  if (!userLocation || !stops || stops.length === 0) return;
+  if (infoWindow) infoWindow.close();
+  
+  routeRenderers.forEach(r => r.setMap(null));
+  routeRenderers = [];
+  if (directionsRenderer) directionsRenderer.setMap(null);
+
+  const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
+  // Last stop is the destination
+  const lastStop = stops[stops.length - 1];
+  const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
+  
+  // Intermediate stops are waypoints
+  const waypoints = stops.slice(0, -1).map(s => ({
+    location: new google.maps.LatLng(s.lat, s.lng),
+    stopover: true
+  }));
+
+  _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
+
+  const request = {
+    origin,
+    destination,
+    waypoints,
+    optimizeWaypoints: true,
+    travelMode: google.maps.TravelMode.WALKING
+  };
+
+  directionsService.route(request, (response, status) => {
+    if (status === 'OK') {
+      // Force a "Tour" results object with pink styling
+      const tourMode = { 
+        key: 'WALKING', 
+        label: 'Tour', 
+        color: '#f472b6', 
+        travelMode: google.maps.TravelMode.WALKING 
+      };
+      const results = { WALKING: { response, mode: tourMode } };
+      
+      _updateModeTab('WALKING', response, tourMode);
+      // Indicate other modes aren't active for this tour view
+      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
+      
+      _drawMode(results, 'WALKING', origin, destination);
+      _showRouteList(results, 'WALKING', origin, destination);
+      
+      // Select the walking mode by default for the tour
+      window._directionsSelectMode('WALKING');
+    } else {
+      console.error("Tour directions failed:", status);
+    }
+  });
+};
+
 /** Makes an element draggable via a handle */
 function _makeElementDraggable(el, handle) {
   let offsetX = 0, offsetY = 0, initialX = 0, initialY = 0;
@@ -2454,7 +2665,7 @@ function _makeElementDraggable(el, handle) {
 }
 
 /** Inject / reset the directions panel below the map controls */
-function _buildDirectionsPanel(label, destLat, destLng) {
+function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
   // Remove old panel if present
   if (directionsPanel) {
     directionsPanel.remove();
@@ -2468,6 +2679,10 @@ function _buildDirectionsPanel(label, destLat, destLng) {
   const sidebarWidth = sidebar ? sidebar.offsetWidth : 380;
   const gap = 10; // px gap between sidebar and panel
 
+  const borderColor = isTour ? 'var(--brand-pink)' : 'var(--panel-border)';
+  const panelShadow = isTour ? '0 0 30px rgba(244, 114, 182, 0.25)' : 'var(--panel-shadow)';
+  const headerBg = isTour ? 'rgba(244, 114, 182, 0.1)' : 'transparent';
+
   const panel = document.createElement('div');
   panel.id = 'directions-panel';
   panel.style.cssText = `
@@ -2477,9 +2692,9 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     width: 280px;
     height: calc(100vh - ${sidebarTop + 16}px);
     background: var(--panel-bg, rgba(17,24,39,0.92));
-    border: 1px solid var(--panel-border, rgba(148,163,184,0.16));
+    border: 1px solid ${borderColor};
     border-radius: 5px;
-    box-shadow: var(--panel-shadow, 0 25px 70px rgba(2,6,23,0.55));
+    box-shadow: ${panelShadow};
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     z-index: 10;
@@ -2494,8 +2709,8 @@ function _buildDirectionsPanel(label, destLat, destLng) {
 
   panel.innerHTML = `
     <!-- Header -->
-    <div id="dir-panel-header" style="display:flex; justify-content:space-between; align-items:center;
-                padding:10px 12px 8px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0; cursor: move;">
+    <div id="dir-panel-header" style="display:flex; justify-content:space-between; align-items:center; background: ${headerBg};
+                padding:10px 12px 8px; border-bottom:1px solid rgba(148,163,184,0.15); flex-shrink:0; cursor: move; border-radius: 5px 5px 0 0;">
       <div>
         <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Directions to</div>
         <div style="font-size:13px; font-weight:600; color:var(--heading-color); margin-top:1px;
@@ -2534,22 +2749,22 @@ function _buildDirectionsPanel(label, destLat, destLng) {
     <!-- Mode tabs -->
     <div id="dir-tabs" style="display:flex; padding:8px 10px 0; gap:4px; flex-shrink:0; overflow-x:auto;
                                scrollbar-width:none;">
-      <button class="dir-tab dir-tab--active" data-mode="TRANSIT" onclick="window._directionsSelectMode('TRANSIT')">
+      <button class="dir-tab ${isTour ? '' : 'dir-tab--active'}" data-mode="TRANSIT" onclick="window._directionsSelectMode('TRANSIT')" style="${isTour ? 'display:none;' : ''}">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M297.5-422.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Zm532.5-93Q880-471 880-400v160q0 33-23.5 56.5T800-160l80 80H520l80-80q-33 0-56.5-23.5T520-240v-160q0-71 50-115.5T700-560q80 0 130 44.5ZM679-291q-9 9-9 21t9 21q9 9 21 9t21-9q9-9 9-21t-9-21q-9-9-21-9t-21 9Zm-91-149q-4 9-6 19t-2 21v40h240v-40q0-11-2-21t-6-19H588ZM480-880q172 0 246 37t74 123v96q-18-6-38-9.5t-42-5.5v-41H240v120h260q-16 17-27.5 37T453-480H240v120q0 33 23.5 56.5T320-280h120v80H320v40q0 17-11.5 28.5T280-120h-40q-17 0-28.5-11.5T200-160v-82q-18-20-29-44.5T160-340v-380q0-83 77-121.5T480-880Zm2 120h224-448 224Zm-224 0h448q-15-17-64.5-28.5T482-800q-107 0-156.5 12.5T258-760Zm195 280Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Transit</span>
         <span id="dir-time-TRANSIT" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="WALKING" onclick="window._directionsSelectMode('WALKING')">
+      <button class="dir-tab ${isTour ? 'dir-tab--active' : ''}" data-mode="WALKING" onclick="window._directionsSelectMode('WALKING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m280-40 112-564-72 28v136h-80v-188l202-86q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q26 42 70.5 69T760-520v80q-70 0-125-29t-94-74l-25 123 84 80v300h-80v-260l-84-64-72 324h-84Zm203.5-723.5Q460-787 460-820t23.5-56.5Q507-900 540-900t56.5 23.5Q620-853 620-820t-23.5 56.5Q573-740 540-740t-56.5-23.5Z"/></svg></span>
-        <span style="font-size:11px; font-weight:600; margin-top:2px;">Walk</span>
+        <span style="font-size:11px; font-weight:600; margin-top:2px;">${isTour ? 'Tour Path' : 'Walk'}</span>
         <span id="dir-time-WALKING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="DRIVING" onclick="window._directionsSelectMode('DRIVING')">
+      <button class="dir-tab" data-mode="DRIVING" onclick="window._directionsSelectMode('DRIVING')" style="${isTour ? 'display:none;' : ''}">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm-32 80v200-200Zm100 160q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Zm-460 40h560v-200H200v200Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Drive</span>
         <span id="dir-time-DRIVING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="BICYCLING" onclick="window._directionsSelectMode('BICYCLING')">
+      <button class="dir-tab" data-mode="BICYCLING" onclick="window._directionsSelectMode('BICYCLING')" style="${isTour ? 'display:none;' : ''}">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-12-11-18-25.5t-6-30.5q0-16 6.5-30.5T312-624l112-112q12-12 27.5-18t32.5-6q17 0 32.5 6t27.5 18l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Bike</span>
         <span id="dir-time-BICYCLING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
@@ -2637,8 +2852,12 @@ function _buildDirectionsPanel(label, destLat, destLng) {
 function _updateModeTab(modeKey, response, mode) {
   const timeEl = document.getElementById(`dir-time-${modeKey}`);
   if (!timeEl) return;
+
+  const tabBtn = timeEl.closest('.dir-tab');
+  const isHidden = tabBtn && tabBtn.style.display === 'none';
+
   if (!response) {
-    timeEl.textContent = 'N/A';
+    timeEl.textContent = isHidden ? '' : 'N/A';
     return;
   }
   // Best duration across all routes for this mode
@@ -2651,18 +2870,19 @@ function _updateModeTab(modeKey, response, mode) {
 
 /** Returns polylineOptions for a given mode key.
  *  Walking gets a blue dotted line matching the transit walking segments. */
-function _polylineOpts(modeKey, fallbackColor) {
+function _polylineOpts(modeKey, fallbackColor = '#3b82f6') {
+  const color = fallbackColor;
   if (modeKey === 'WALKING') {
     return {
-      strokeColor:   '#60a5fa',
+      strokeColor:   color,
       strokeOpacity: 0,           // hide the solid line
       strokeWeight:  5,
       icons: [{
         icon: {
           path:         google.maps.SymbolPath.CIRCLE,
-          fillColor:    '#60a5fa',
+          fillColor:    color,
           fillOpacity:  1,
-          strokeColor:  '#60a5fa',
+          strokeColor:  color,
           strokeOpacity:1,
           scale:        3
         },
@@ -2671,7 +2891,7 @@ function _polylineOpts(modeKey, fallbackColor) {
       }]
     };
   }
-  return { strokeColor: fallbackColor, strokeWeight: 5, strokeOpacity: 0.85 };
+  return { strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 };
 }
 
 /** Draw the route line for the selected mode */
@@ -2684,7 +2904,7 @@ function _drawMode(results, modeKey, origin, destination) {
   if (!entry) return;
 
   const colors = { TRANSIT:'#65FE08', WALKING:'#3b82f6', DRIVING:'#FE1CCF', BICYCLING:'#F3FF00' };
-  const color  = colors[modeKey] || '#3b82f6';
+  const color  = entry.mode?.color || colors[modeKey] || '#3b82f6';
 
   const renderer = new google.maps.DirectionsRenderer({
     map,
@@ -2713,7 +2933,7 @@ function _showRouteList(results, modeKey, origin, destination) {
   const routes   = entry.response.routes;
   const mode     = entry.mode;
   const colors   = { TRANSIT:'#65FE08', WALKING:'#3b82f6', DRIVING:'#FE1CCF', BICYCLING:'#F3FF00' };
-  const color    = colors[modeKey] || '#3b82f6';
+  const color    = mode?.color || colors[modeKey] || '#3b82f6';
 
   listEl.innerHTML = '';
 
@@ -3343,12 +3563,8 @@ function setupThemeToggle() {
     localStorage.setItem('theme', isLight ? 'light' : 'dark');
     toggleText.textContent = isLight ? "Dark Mode" : "Light Mode";
     
-    // Update map style if map is initialized
-    if (map) {
-      map.setOptions({
-        backgroundColor: isLight ? '#f8fafc' : '#000000'
-      });
-    }
+    // Update map style if map is initialized (moved here to ensure it runs after theme change)
+    if (map) map.setOptions({ backgroundColor: isLight ? '#f8fafc' : '#000000' });
   });
 }
 
