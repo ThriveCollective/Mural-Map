@@ -1432,7 +1432,7 @@ function showMuralPopup(marker) {
       if (geocodeCache.has(cacheKey)) {
         const cached = geocodeCache.get(cacheKey);
         addressTextEl.textContent = cached.formatted;
-      } else if (geocoder) {
+       } else if (geocoder) {
         geocoder.geocode({ location: { lat: m.lat, lng: m.lng } }, (results, status) => {
           let formatted;
           if (status === "OK" && results && results[0]) {
@@ -1533,17 +1533,22 @@ function createCustomTourNearMe() {
   activeFilters.borough = null;
   activeFilters.artist = null;
   activeFilters.theme = null;
-  const tourMurals = getNearbyTourMurals(userLocation, 1609.34); // 1 mile
+  activeFilters.setting = null;
+
+  const settingEl = document.getElementById('customTourSetting');
+  const selectedSetting = settingEl ? settingEl.value : 'any';
+  const tourMurals = getNearbyTourMurals(userLocation, 1609.34, 6, selectedSetting); // 1 mile
 
   if (tourMurals.length < 2) {
-    alert(`Only ${tourMurals.length} mural(s) found within 1 mile. Try another location!`);
+    const settingLabel = selectedSetting === 'any' ? '' : ` (${selectedSetting})`;
+    alert(`Only ${tourMurals.length} mural(s) found${settingLabel} within 1 mile. Try another location or setting!`);
     return;
   }
 
   const customTour = {
     id: "custom-near-me",
     name: "My Local Mural Tour",
-    description: `A walking route through ${tourMurals.length} local murals.`,
+    description: `A walking route through ${tourMurals.length} local murals${selectedSetting !== 'any' ? ` (${selectedSetting})` : ''}.`,
     color: "#fbbf24", 
     stops: groupByLocation(tourMurals),
     allMurals: tourMurals,

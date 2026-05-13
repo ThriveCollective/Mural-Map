@@ -1380,3 +1380,44 @@ body:not(.light-mode) #directions-panel {
 
 .light-mode .sun-icon { display: none; }
 body:not(.light-mode) .moon-icon { display: none; }
+
+.info-tip {
+  position: relative;
+  cursor: help;
+  margin-left: 4px;
+  color: var(--brand-blue);
+  font-size: 12px;
+  vertical-align: middle;
+  display: inline-block;
+}
+
+.info-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 140%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel-bg);
+  color: var(--text-main);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  font-size: 11px;
+  white-space: normal;
+  width: 160px;
+  box-shadow: var(--panel-shadow);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 100;
+  pointer-events: none;
+  text-transform: none;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.info-tip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}

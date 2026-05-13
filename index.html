@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="css/style.css" rel="icon"/>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-  </head>
+  </head>   
   <body>
     <div id="app">
       <aside id="sidebar">
@@ -36,6 +36,17 @@
         </section>
 
         <section class="custom-tour-trigger-panel">
+          <div id="customTourSettingWrapper" style="margin-bottom: 10px;">
+            <label for="customTourSetting" style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; display: block; font-weight: 600; letter-spacing: 0.5px;">
+              Tour Setting
+              <span class="info-tip" data-tip="Exterior: Public murals. Interior: Inside buildings. Any: Mixed tour.">ⓘ</span>
+            </label>
+            <select id="customTourSetting" class="filter-select">
+              <option value="any">Any Setting (Mixed)</option>
+              <option value="exterior">Exterior Only</option>
+              <option value="interior">Interior Only</option>
+            </select>
+          </div>
           <button id="createCustomTourBtn" class="custom-tour-header-btn">
             <span>✨</span> Create Local Tour
           </button>
