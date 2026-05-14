@@ -29,6 +29,8 @@ let tourStopNumbers = new Map(); // Maps mural UID to stop number for active tou
 let tourMarkers = []; // Separate array for numbered tour markers (not clustered)
 let districtLabels = []; // Global scope so theme toggle can access it
 let activeTourDefinition = null; // Stores the full object of the currently active tour
+let activeTourCursor = 0; // Current stop index in the active tour
+let activeTourOrderedStops = []; // Ordered list of stops for the active tour
 // Services for Directions
 let zoomTimeout;
 let directionsService = null;
@@ -380,7 +382,10 @@ function renderTourCards() {
         // ── Start tour: activate this tour ──
         activeFilters.tour = prefixedId;
         activeTourDefinition = tour;
+        activeTourCursor = 0;
+        activeTourOrderedStops = orderStopsForTour(tour.stops);
         applyFilters();
+        renderTourItinerary();
       }
 
       // Re-render cards so every button reflects the new state
@@ -476,8 +481,20 @@ function updateTourPolyline() {
     map,
     path,
     strokeColor: color,
-    strokeOpacity: 0.9,
-    strokeWeight: 3
+    strokeOpacity: 1,
+    strokeWeight: 6,
+    icons: [{
+      icon: {
+        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+        scale: 4,
+        strokeColor: color,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeOpacity: 1
+      },
+      offset: '15%',
+      repeat: '70px'
+    }]
   });
 
   // Fit the map to the bounds of the tour stops
@@ -681,7 +698,7 @@ async function loadMuralsFromSheet() {
     const idxAddress = getColumnIndex(header, ["address", "street_address", "location_address"]);
     const idxSetting = getColumnIndex(header, ["location", "setting", "location_type", "interior_exterior", "placement"]);
     const idxNeighborhood = getColumnIndex(header, ["neighborhood", "area", "district"]);
-    const idxDescription = getColumnIndex(header, ["mural_description", "description", "about"]);
+    const idxDescription = getColumnIndex(header, ["tour_description", "historical_info", "mural_description", "description", "about"]);
 
     if (idxName === -1) {
       throw new Error("Could not find name column. Expected one of: mural_title, mural_name, name, title");
@@ -1012,16 +1029,22 @@ function addToRecents(mural) {
 function renderRecents() {
   const container = document.getElementById('recentMuralsList');
   if (!container) return;
-  container.innerHTML = muralHistory.length === 0 
-    ? '<p class="tours-panel-subtitle">No murals viewed yet.</p>' 
-    : '';
+  container.innerHTML = '';
+
+  if (muralHistory.length === 0) {
+    container.innerHTML = '<p class="tours-panel-subtitle">No murals viewed yet.</p>';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
   muralHistory.forEach(m => {
     const card = document.createElement('div');
     card.className = 'recent-card';
     card.innerHTML = `<h4>${m.name}</h4><p>${m.school || m.borough || ''}</p>`;
     card.onclick = () => focusOnMuralByUid(m.uid);
-    container.appendChild(card);
+    fragment.appendChild(card);
   });
+  container.appendChild(fragment);
 }
 
 /** Showcases a few random murals for discovery and provides a 'Surprise Me' option */
@@ -1033,9 +1056,14 @@ function renderFeaturedMurals() {
   // Clear previous content in the dynamic list
   container.innerHTML = '';
 
-  // Get 3 random murals from the full list
-  const shuffled = [...allMurals].sort(() => 0.5 - Math.random());
-  const featured = shuffled.slice(0, 3);
+  // Get 3 random murals from the full list without sorting all murals
+  const featured = [];
+  const samplePool = [...allMurals];
+  const targetCount = Math.min(3, samplePool.length);
+  for (let i = 0; i < targetCount; i++) {
+    const randomIndex = Math.floor(Math.random() * samplePool.length);
+    featured.push(samplePool.splice(randomIndex, 1)[0]);
+  }
 
   container.innerHTML = `
     <button id="surpriseMeBtn" class="primary-btn" style="margin-bottom: 12px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -1119,9 +1147,14 @@ function toggleSaveMural(mural) {
 function renderSavedMurals() {
   const container = document.getElementById('savedMuralsList');
   if (!container) return;
-  container.innerHTML = savedMurals.length === 0 
-    ? '<p class="tours-panel-subtitle">No saved murals yet.</p>' 
-    : '';
+  container.innerHTML = '';
+
+  if (savedMurals.length === 0) {
+    container.innerHTML = '<p class="tours-panel-subtitle">No saved murals yet.</p>';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
   savedMurals.forEach(m => {
     const card = document.createElement('div');
     card.className = 'recent-card';
@@ -1135,8 +1168,9 @@ function renderSavedMurals() {
       </div>
     `;
     card.onclick = () => focusOnMuralByUid(m.uid);
-    container.appendChild(card);
+    fragment.appendChild(card);
   });
+  container.appendChild(fragment);
 }
 
 function showMuralPopup(marker) {
@@ -1298,6 +1332,9 @@ function showMuralPopup(marker) {
         </div>
       </div>
 
+      <!-- Street View Panel Container -->
+      <div id="${popupId}-streetview-panel" style="display:none; width:100%; height:250px; border-radius:8px; margin-bottom:16px; overflow:hidden; background:#000;"></div>
+
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
         <button id="${popupId}-save"
           style="flex:1; border:1px solid ${isSavedInitial ? '#ef4444' : 'var(--panel-border)'}; border-radius:999px; background:${isSavedInitial ? 'rgba(239, 68, 68, 0.1)' : 'transparent'}; color:${isSavedInitial ? '#ef4444' : 'var(--text-main)'}; font-weight:600; padding:10px 18px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-family:system-ui,sans-serif;">
@@ -1307,6 +1344,11 @@ function showMuralPopup(marker) {
         <button id="${popupId}-directions"
           style="flex:1; border:none; border-radius:999px; background:#3b82f6; color:#0f172a; font-weight:600; padding:10px 18px; cursor:pointer; font-size:14px; font-family:system-ui,sans-serif;">
           Directions
+        </button>
+        <button id="${popupId}-streetview"
+          style="flex:1; border:1px solid var(--panel-border); border-radius:999px; background:rgba(59,130,246,0.1); color:var(--text-main); font-weight:600; padding:10px 18px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+          <span style="font-size: 16px;">🏙️</span>
+          <span id="${popupId}-streetview-text">Street View</span>
         </button>
         <button id="${popupId}-focus"
           style="flex:1; border:1px solid var(--panel-border); border-radius:999px; background:transparent; color:var(--text-main); font-weight:600; padding:10px 18px; cursor:pointer;">
@@ -1399,6 +1441,40 @@ function showMuralPopup(marker) {
       }
     });
 
+    const streetViewBtn = document.getElementById(`${popupId}-streetview`);
+    const streetViewPanel = document.getElementById(`${popupId}-streetview-panel`);
+    const streetViewText = document.getElementById(`${popupId}-streetview-text`);
+    let streetViewInitialized = false;
+
+    streetViewBtn?.addEventListener("click", () => {
+      if (!streetViewPanel) return;
+      const showStreetView = streetViewPanel.style.display !== "block";
+      streetViewPanel.style.display = showStreetView ? "block" : "none";
+      if (streetViewText) {
+        streetViewText.textContent = showStreetView ? "Hide Street View" : "Street View";
+      }
+
+      if (showStreetView && !streetViewInitialized) {
+        streetViewInitialized = true;
+        const panorama = new google.maps.StreetViewPanorama(streetViewPanel, {
+          position: { lat: m.lat, lng: m.lng },
+          pov: { heading: 0, pitch: 0 },
+          zoom: 1,
+          motionTracking: false,
+          addressControl: false,
+          fullscreenControl: false,
+          linksControl: false,
+          showRoadLabels: true,
+          visible: true
+        });
+        panorama.addListener('status_changed', () => {
+          if (panorama.getStatus && panorama.getStatus() !== 'OK') {
+            streetViewPanel.innerHTML = '<div style="padding: 16px; color: #fff; text-align: center;">Street View is not available at this location.</div>';
+          }
+        });
+      }
+    });
+
     const saveBtn = document.getElementById(`${popupId}-save`);
     saveBtn?.addEventListener("click", () => {
       toggleSaveMural(m);
@@ -1466,13 +1542,39 @@ function renderTourItinerary() {
 
   const tourColor = activeTourDefinition.color || "#3b82f6";
   if (subtitle) subtitle.style.display = 'none';
-  
+
+  if (!activeTourOrderedStops || activeTourOrderedStops.length === 0) {
+    const tourEntryForOrdering = curatedTourStops.get(activeTourDefinition.id);
+    if (tourEntryForOrdering) {
+      activeTourOrderedStops = orderStopsForTour(tourEntryForOrdering.stops);
+    }
+    activeTourCursor = Math.max(0, Math.min(activeTourCursor, activeTourOrderedStops.length - 1));
+  }
+
+  const currentStop = activeTourOrderedStops[activeTourCursor] || { name: '' };
+  const nextStop = activeTourOrderedStops[activeTourCursor + 1];
+
   let html = `
     <div class="tour-itinerary-wrapper">
       <div class="tour-itinerary-header" style="border-left: 4px solid ${tourColor};">
-        <button id="backToTours" class="back-link">← Back to All Tours</button>
-        <h3>${activeTourDefinition.name}</h3>
-        <p>${activeTourDefinition.description}</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px;">
+          <h3 style="margin:0; flex:1;">${activeTourDefinition.name}</h3>
+          <button id="backToTours" style="background:#ef4444; color:white; border:none; padding:8px 16px; border-radius:4px; font-weight:600; cursor:pointer; font-size:12px; white-space:nowrap; transition:background 0.2s;" onmouseover="this.style.background='#dc2626';" onmouseout="this.style.background='#ef4444';">✕ End Tour</button>
+        </div>
+        <p style="font-size:12px; color: var(--text-muted); margin:0 0 8px 0;">${activeTourDefinition.description}</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px;">
+          <span id="tourStopStatus" style="font-size:12px; color:var(--text-muted);">
+            Stop ${activeTourCursor + 1} of ${activeTourOrderedStops.length}
+          </span>
+          <div style="display:flex; gap:6px; flex-wrap: wrap;">
+            <button id="tourPrevStop" class="ghost-btn" style="padding:8px 12px;">Previous</button>
+            <button id="tourNextStop" class="ghost-btn" style="padding:8px 12px;">Next</button>
+            <button id="tourGoNext" class="ghost-btn" style="padding:8px 12px;">Navigate</button>
+          </div>
+        </div>
+        <div id="tourNextHint" style="font-size:12px; color:var(--text-muted); margin-top:8px;">
+          ${nextStop ? `Next: ${nextStop.name}` : 'This is the final stop.'}
+        </div>
       </div>
       <div class="tour-itinerary-list">
   `;
@@ -1482,8 +1584,9 @@ function renderTourItinerary() {
   const stops = orderStopsForTour(tourEntry.stops);
   
   stops.forEach((stop, idx) => {
+    const isActiveStop = idx === activeTourCursor;
     html += `
-      <div class="tour-itinerary-card" onclick="focusOnMuralByUid('${stop.uid}')">
+      <div class="tour-itinerary-card${isActiveStop ? ' active-stop' : ''}" onclick="focusOnMuralByUid('${stop.uid}')">
         <div class="stop-badge" style="background: ${tourColor}">${idx + 1}</div>
         <div class="stop-content">
           <h4>${stop.name}</h4>
@@ -1499,24 +1602,150 @@ function renderTourItinerary() {
   container.querySelector('#backToTours').onclick = () => {
     activeFilters.tour = null;
     activeTourDefinition = null;
+    activeTourCursor = 0;
+    activeTourOrderedStops = [];
     if (subtitle) subtitle.style.display = 'block';
     applyFilters();
     renderTourCards();
   };
+
+  container.querySelector('#tourPrevStop')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (activeTourCursor > 0) {
+      setActiveTourStop(activeTourCursor - 1);
+    }
+  });
+  container.querySelector('#tourNextStop')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (activeTourCursor < activeTourOrderedStops.length - 1) {
+      setActiveTourStop(activeTourCursor + 1);
+    }
+  });
+  container.querySelector('#tourGoNext')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const nextStop = activeTourOrderedStops[activeTourCursor + 1];
+    if (!nextStop) return;
+    const origin = userLocation || activeTourOrderedStops[activeTourCursor] || null;
+    if (!origin) return;
+    if (!userLocation) {
+      window.userLocation = { lat: origin.lat, lng: origin.lng };
+    }
+    window.calculateTransitDirections(nextStop.lat, nextStop.lng, nextStop.name);
+  });
+
+  updateTourNextHintAddress(nextStop);
 }
 
 
-/** Helper: Finds and sorts murals within a specific radius (default 1 mile) */
-function getNearbyTourMurals(origin, radiusMeters, limit = 6) {
-  return allMurals
+function setActiveTourStop(index) {
+  if (!activeTourOrderedStops || !activeTourOrderedStops.length) return;
+  activeTourCursor = Math.max(0, Math.min(index, activeTourOrderedStops.length - 1));
+  const stop = activeTourOrderedStops[activeTourCursor];
+  if (!stop) return;
+
+  const statusEl = document.getElementById('tourStopStatus');
+  if (statusEl) {
+    statusEl.textContent = `Stop ${activeTourCursor + 1} of ${activeTourOrderedStops.length}`;
+  }
+
+  const hintEl = document.getElementById('tourNextHint');
+  if (hintEl) {
+    const nextStop = activeTourOrderedStops[activeTourCursor + 1];
+    hintEl.textContent = nextStop ? `Next: ${nextStop.name}` : 'This is the final stop.';
+  }
+
+  focusOnMuralByUid(stop.uid);
+  renderTourItinerary();
+}
+
+function refreshCustomTourIfActive() {
+  if (!userLocation || activeFilters.tour !== `${CURATED_TOUR_PREFIX}custom-near-me`) return;
+
+  const settingEl = document.getElementById('customTourSetting');
+  const radiusEl = document.getElementById('customTourRadius');
+  const limitEl = document.getElementById('customTourLimit');
+  if (!settingEl || !radiusEl || !limitEl) return;
+
+  const selectedSetting = settingEl.value || 'any';
+  const radiusMiles = Number(radiusEl.value) || 1;
+  const limitStops = Number(limitEl.value) || 6;
+  const radiusMeters = Math.max(0.5, radiusMiles) * 1609.344;
+  const nearby = getNearbyTourStops(userLocation, radiusMeters, limitStops, selectedSetting);
+
+  if (nearby.stops.length < 2) {
+    const summary = document.getElementById('customTourSummary');
+    if (summary) {
+      summary.textContent = `Not enough stops to create a tour with current settings. Increase radius or mural count.`;
+    }
+    return;
+  }
+
+  const customTour = {
+    id: "custom-near-me",
+    name: "My Local Mural Tour",
+    description: `Local mural tour: ${nearby.uniqueStopCount} stops within ${radiusMiles} mile${radiusMiles === 1 ? '' : 's'}${selectedSetting !== 'any' ? ` (${selectedSetting})` : ''}.`,
+    color: "#fbbf24",
+    stops: nearby.stops,
+    allMurals: nearby.stops,
+    uidSet: new Set(nearby.stops.map(m => m.uid))
+  };
+
+  curatedTourStops.set(customTour.id, { definition: customTour, stops: customTour.stops, allMurals: customTour.allMurals, uidSet: customTour.uidSet });
+  activeTourDefinition = customTour;
+  activeTourOrderedStops = orderStopsForTour(customTour.stops);
+  activeTourCursor = Math.min(activeTourCursor, activeTourOrderedStops.length - 1);
+
+  applyFilters();
+  renderTourItinerary();
+  if (directionsPanel) {
+    window.calculateTourDirections(activeTourOrderedStops, activeTourDefinition.name);
+  }
+}
+
+function getNearbyTourStops(origin, radiusMeters, limit = 6, selectedSetting = 'any') {
+  const normalizedSetting = (selectedSetting || 'any').toLowerCase();
+
+  const nearby = allMurals
     .filter(m => m.lat !== null && m.lng !== null)
-    .map(m => ({ 
-      ...m, 
-      distance: calculateDistanceMeters(origin, { lat: m.lat, lng: m.lng }) 
+    .filter(m => {
+      if (normalizedSetting === 'any') return true;
+      const muralSetting = (m.setting || '').toLowerCase();
+      if (normalizedSetting === 'interior') {
+        return muralSetting.includes('interior') || muralSetting.includes('indoor');
+      }
+      if (normalizedSetting === 'exterior') {
+        return muralSetting.includes('exterior') || muralSetting.includes('outdoor') || muralSetting === '';
+      }
+      return true;
+    })
+    .map(m => ({
+      ...m,
+      distance: calculateDistanceMeters(origin, { lat: m.lat, lng: m.lng })
     }))
     .filter(m => m.distance <= radiusMeters)
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, limit);
+    .sort((a, b) => a.distance - b.distance);
+
+  const uniqueStops = [];
+  const seenLocations = new Set();
+  for (const mural of nearby) {
+    const locationKey = getLocationKey(mural.lat, mural.lng);
+    if (!seenLocations.has(locationKey)) {
+      uniqueStops.push(mural);
+      seenLocations.add(locationKey);
+      if (uniqueStops.length >= limit) break;
+    }
+  }
+
+  return {
+    stops: uniqueStops,
+    muralCount: nearby.length,
+    uniqueStopCount: uniqueStops.length
+  };
+}
+
+/** Helper: Finds and sorts murals within a specific radius (default 1 mile) */
+function getNearbyTourMurals(origin, radiusMeters, limit = 6, selectedSetting = 'any') {
+  return getNearbyTourStops(origin, radiusMeters, limit, selectedSetting).stops;
 }
 
 /** Generates the dynamic guided tour */
@@ -1536,31 +1765,48 @@ function createCustomTourNearMe() {
   activeFilters.setting = null;
 
   const settingEl = document.getElementById('customTourSetting');
+  const radiusEl = document.getElementById('customTourRadius');
+  const limitEl = document.getElementById('customTourLimit');
   const selectedSetting = settingEl ? settingEl.value : 'any';
-  const tourMurals = getNearbyTourMurals(userLocation, 1609.34, 6, selectedSetting); // 1 mile
+  const radiusMiles = radiusEl ? Number(radiusEl.value) : 1;
+  const limitStops = limitEl ? Number(limitEl.value) : 6;
+  const radiusMeters = Math.max(0.5, radiusMiles) * 1609.344;
 
-  if (tourMurals.length < 2) {
+  const nearby = getNearbyTourStops(userLocation, radiusMeters, limitStops, selectedSetting);
+
+  if (nearby.stops.length < 2) {
     const settingLabel = selectedSetting === 'any' ? '' : ` (${selectedSetting})`;
-    alert(`Only ${tourMurals.length} mural(s) found${settingLabel} within 1 mile. Try another location or setting!`);
+    alert(`Only ${nearby.uniqueStopCount} stop${nearby.uniqueStopCount === 1 ? '' : 's'} found${settingLabel} within ${radiusMiles} mile${radiusMiles === 1 ? '' : 's'}. Try a larger radius, more stops, or another setting!`);
     return;
   }
 
   const customTour = {
     id: "custom-near-me",
     name: "My Local Mural Tour",
-    description: `A walking route through ${tourMurals.length} local murals${selectedSetting !== 'any' ? ` (${selectedSetting})` : ''}.`,
-    color: "#fbbf24", 
-    stops: groupByLocation(tourMurals),
-    allMurals: tourMurals,
-    uidSet: new Set(tourMurals.map(m => m.uid))
+    description: `Local mural tour: ${nearby.uniqueStopCount} stops within ${radiusMiles} mile${radiusMiles === 1 ? '' : 's'}${selectedSetting !== 'any' ? ` (${selectedSetting})` : ''}.`,
+    color: "#fbbf24",
+    stops: nearby.stops,
+    allMurals: nearby.stops,
+    uidSet: new Set(nearby.stops.map(m => m.uid))
   };
 
   curatedTourStops.set(customTour.id, { definition: customTour, stops: customTour.stops, allMurals: customTour.allMurals, uidSet: customTour.uidSet });
   activeFilters.tour = `${CURATED_TOUR_PREFIX}${customTour.id}`;
   activeTourDefinition = customTour;
+  activeTourCursor = 0;
+  activeTourOrderedStops = orderStopsForTour(customTour.stops);
   
   applyFilters();
-  showToast("Custom tour created!");
+  showToast(`Custom tour created within ${radiusMiles} mile${radiusMiles === 1 ? '' : 's'}!`);
+
+  // NEW: Ensure the Curated Tours section is expanded
+  const toursContainer = document.getElementById("curatedToursContainer");
+  const toggleIcon = document.getElementById("toggleCuratedToursIcon");
+  if (toursContainer && toursContainer.style.display === "none") {
+    toursContainer.style.display = "flex";
+    if (toggleIcon) toggleIcon.textContent = "−";
+  }
+  renderTourItinerary();
 
   // Automatically trigger directions for the new custom tour
   if (customTour.stops && customTour.stops.length > 0) {
@@ -1907,8 +2153,6 @@ function setupMuralView() {
       applyFilters();
     });
   }
-  // Initialise the inline address search
-  setupManualLocationSearch();
 }
 
 /** NEW: Sets up event listeners for filter controls like "Clear All Filters". */
@@ -1989,6 +2233,68 @@ function setupNearestControls() {
   // This function is kept as a no-op so existing initMap call doesn't break.
 }
 
+function updateCustomTourSummary() {
+  const summary = document.getElementById('customTourSummary');
+  if (!summary) return;
+
+  const radiusEl = document.getElementById('customTourRadius');
+  const limitEl = document.getElementById('customTourLimit');
+  const settingEl = document.getElementById('customTourSetting');
+  if (!radiusEl || !limitEl || !settingEl) return;
+
+  const radiusMiles = Number(radiusEl.value) || 1;
+  const limitStops = Number(limitEl.value) || 6;
+  const selectedSetting = settingEl.value || 'any';
+
+  if (!userLocation) {
+    summary.textContent = 'Set your location first to preview local tour stops.';
+    return;
+  }
+
+  const radiusMeters = Math.max(0.5, radiusMiles) * 1609.344;
+  const nearby = getNearbyTourStops(userLocation, radiusMeters, limitStops, selectedSetting);
+  const stopsText = `${nearby.uniqueStopCount} stop${nearby.uniqueStopCount === 1 ? '' : 's'}`;
+  const muralsText = `${nearby.muralCount} mural${nearby.muralCount === 1 ? '' : 's'}`;
+  summary.textContent = `${stopsText} available within ${radiusMiles} mile${radiusMiles === 1 ? '' : 's'} (${muralsText} total).`;
+}
+
+function setupCustomTourRadiusControl() {
+  const configs = [
+    { id: 'customTourRadius', labelId: 'customTourRadiusLabel', unit: 'mile', suffix: 's' },
+    { id: 'customTourLimit', labelId: 'customTourLimitLabel', unit: 'stop', suffix: 's' }
+  ];
+
+  configs.forEach(config => {
+    const slider = document.getElementById(config.id);
+    const label = document.getElementById(config.labelId);
+    if (!slider || !label) return;
+
+    const update = () => {
+      const val = Number(slider.value);
+      label.textContent = `${val} ${config.unit}${val === 1 ? '' : config.suffix}`;
+
+      // Update the slider track fill gradient
+      const min = parseFloat(slider.min) || 0;
+      const max = parseFloat(slider.max) || (config.id === 'customTourRadius' ? 5 : 20);
+      const percent = ((val - min) / (max - min)) * 100;
+      slider.style.setProperty('--val', percent);
+      updateCustomTourSummary();
+      refreshCustomTourIfActive();
+    };
+
+    update();
+    slider.addEventListener('input', update);
+  });
+
+  const settingEl = document.getElementById('customTourSetting');
+  if (settingEl) {
+    settingEl.addEventListener('change', () => {
+      updateCustomTourSummary();
+      refreshCustomTourIfActive();
+    });
+  }
+}
+
 function setLocateButtonState(isLoading) {
   const locateBtn = document.getElementById("locateMeBtn");
   if (!locateBtn) return;
@@ -2015,6 +2321,7 @@ function handleLocationSuccess(position, addressLabel = "Current Location") { //
   setUserLocationMarker(coords, position.coords.accuracy);
   const nearest = findNearestMurals();
   renderNearestList(nearest);
+  updateCustomTourSummary();
 
   const clearBtn = document.getElementById("clearLocationBtn");
   if (clearBtn) {
@@ -2121,6 +2428,7 @@ function clearUserLocation() {
   }
   
   renderNearestList();
+  updateCustomTourSummary();
 }
 
 function findNearestMurals(limit = 4) {
@@ -2138,6 +2446,22 @@ function findNearestMurals(limit = 4) {
 function focusOnMuralByUid(uid) {
   // 1. Close the search results summary popup
   if (searchInfoWindow) searchInfoWindow.close();
+
+  if (activeTourDefinition && activeTourOrderedStops && activeTourOrderedStops.length) {
+    const tourIndex = activeTourOrderedStops.findIndex(stop => stop.uid === uid);
+    if (tourIndex !== -1) {
+      activeTourCursor = tourIndex;
+      renderTourItinerary();
+      const nextStop = activeTourOrderedStops[activeTourCursor + 1];
+      updateTourNextHintAddress(nextStop);
+      const currentStop = activeTourOrderedStops[activeTourCursor];
+      if (currentStop && directionsPanel) {
+        updateDirectionsPanelAddress(currentStop.lat, currentStop.lng, currentStop.address || '');
+      }
+      // Automatically calculate tour directions when clicking a tour stop
+      window.calculateTourDirections(activeTourOrderedStops, activeTourDefinition.name);
+    }
+  }
 
   const marker = markers.find(m => m.mural.uid === uid);
   if (marker) {
@@ -2243,6 +2567,26 @@ async function initMap() {
     const clearBtn = document.getElementById('clearLocationBtn');
     if (clearBtn) {
       clearBtn.addEventListener('click', () => {
+        // End active tour when location is cleared
+        if (activeTourDefinition) {
+          activeFilters.tour = null;
+          activeTourDefinition = null;
+          activeTourCursor = 0;
+          activeTourOrderedStops = [];
+          if (activeTourPolyline) {
+            activeTourPolyline.setMap(null);
+            activeTourPolyline = null;
+          }
+          tourMarkers.forEach(m => m.setMap(null));
+          tourMarkers = [];
+          if (directionsPanel) {
+            directionsPanel.remove();
+            directionsPanel = null;
+          }
+          routeRenderers.forEach(r => r.setMap(null));
+          routeRenderers = [];
+        }
+        
         clearMapRoutes();
         const addressInput = document.getElementById('manual-address-input');
         if (addressInput) addressInput.value = "";
@@ -2296,9 +2640,9 @@ async function initMap() {
     currentVisibleMurals = murals;
     createMarkers(murals);
     populateFilters();
+    setupManualLocationSearch();
     setupSearch();
     setupFilterControls(); 
-    setupMuralView();
 
     // HIDE LOADING SCREEN NOW - geocoding will happen in background
     showLoading(false);
@@ -2328,7 +2672,13 @@ async function initMap() {
     if (districtToggle) {
       districtToggle.addEventListener('change', (e) => {
         const isVisible = e.target.checked;
-        map.data.setStyle({ strokeOpacity: isVisible ? 1.0 : 0, strokeColor: '#60a5fa', strokeWeight: 1.5 });
+        map.data.setStyle({ 
+          visible: isVisible,
+          fillColor: 'transparent',
+          strokeColor: '#60a5fa',
+          strokeWeight: 1.5,
+          clickable: isVisible
+        });
         districtLabels.forEach(m => m.setMap(isVisible ? map : null));
       });
     }
@@ -2383,6 +2733,7 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
 
   // Build or reset the panel
   _buildDirectionsPanel(label, destLat, destLng);
+  updateDirectionsPanelAddress(destLat, destLng);
 
   // Travel modes to query in parallel
   const modes = [
@@ -2442,10 +2793,6 @@ window.calculateTransitDirections = function(destLat, destLng, destName) {
   };
 };
 
-/**
- * Calculates walking directions for a multi-stop tour using waypoints.
- * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
- */
 window.calculateTourDirections = function(stops, tourName) {
   if (!userLocation || !stops || stops.length === 0) return;
   if (infoWindow) infoWindow.close();
@@ -2455,167 +2802,57 @@ window.calculateTourDirections = function(stops, tourName) {
   if (directionsRenderer) directionsRenderer.setMap(null);
 
   const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
-  // Last stop is the destination
   const lastStop = stops[stops.length - 1];
   const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
   
-  // Intermediate stops are waypoints
   const waypoints = stops.slice(0, -1).map(s => ({
     location: new google.maps.LatLng(s.lat, s.lng),
     stopover: true
   }));
 
   _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
+  updateDirectionsPanelAddress(lastStop.lat, lastStop.lng, lastStop.address || '');
 
-  const request = {
-    origin,
-    destination,
-    waypoints,
-    optimizeWaypoints: true,
-    travelMode: google.maps.TravelMode.WALKING
-  };
+  const modes = [
+    { key: 'TRANSIT',   label: 'Transit',  color: '#4ade80', travelMode: google.maps.TravelMode.TRANSIT },
+    { key: 'WALKING',   label: 'Walk',     color: '#60a5fa', travelMode: google.maps.TravelMode.WALKING },
+    { key: 'DRIVING',   label: 'Drive',    color: '#f472b6', travelMode: google.maps.TravelMode.DRIVING },
+    { key: 'BICYCLING', label: 'Bike',     color: '#fbbf24', travelMode: google.maps.TravelMode.BICYCLING }
+  ];
 
-  directionsService.route(request, (response, status) => {
-    if (status === 'OK') {
-      // Force a "Tour" results object with pink styling
-      const tourMode = { 
-        key: 'WALKING', 
-        label: 'Tour', 
-        color: '#f472b6', 
-        travelMode: google.maps.TravelMode.WALKING 
-      };
-      const results = { WALKING: { response, mode: tourMode } };
-      
-      _updateModeTab('WALKING', response, tourMode);
-      // Indicate other modes aren't active for this tour view
-      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
-      
-      _drawMode(results, 'WALKING', origin, destination);
-      _showRouteList(results, 'WALKING', origin, destination);
-      
-      // Select the walking mode by default for the tour
-      window._directionsSelectMode('WALKING');
-    } else {
-      console.error("Tour directions failed:", status);
+  const results = {};
+  let completed = 0;
+
+  modes.forEach(mode => {
+    const req = {
+      origin,
+      destination,
+      waypoints,
+      travelMode: mode.travelMode,
+      provideRouteAlternatives: true
+    };
+    if (mode.key === 'DRIVING' || mode.key === 'BICYCLING') {
+      req.optimizeWaypoints = true;
     }
-  });
-};
-
-/**
- * Calculates walking directions for a multi-stop tour using waypoints.
- * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
- */
-window.calculateTourDirections = function(stops, tourName) {
-  if (!userLocation || !stops || stops.length === 0) return;
-  if (infoWindow) infoWindow.close();
-  
-  routeRenderers.forEach(r => r.setMap(null));
-  routeRenderers = [];
-  if (directionsRenderer) directionsRenderer.setMap(null);
-
-  const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
-  // Last stop is the destination
-  const lastStop = stops[stops.length - 1];
-  const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
-  
-  // Intermediate stops are waypoints
-  const waypoints = stops.slice(0, -1).map(s => ({
-    location: new google.maps.LatLng(s.lat, s.lng),
-    stopover: true
-  }));
-
-  _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
-
-  const request = {
-    origin,
-    destination,
-    waypoints,
-    optimizeWaypoints: true,
-    travelMode: google.maps.TravelMode.WALKING
-  };
-
-  directionsService.route(request, (response, status) => {
-    if (status === 'OK') {
-      // Force a "Tour" results object with pink styling
-      const tourMode = { 
-        key: 'WALKING', 
-        label: 'Tour', 
-        color: '#f472b6', 
-        travelMode: google.maps.TravelMode.WALKING 
-      };
-      const results = { WALKING: { response, mode: tourMode } };
-      
-      _updateModeTab('WALKING', response, tourMode);
-      // Indicate other modes aren't active for this tour view
-      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
-      
-      _drawMode(results, 'WALKING', origin, destination);
-      _showRouteList(results, 'WALKING', origin, destination);
-      
-      // Select the walking mode by default for the tour
-      window._directionsSelectMode('WALKING');
-    } else {
-      console.error("Tour directions failed:", status);
+    if (mode.key === 'TRANSIT') {
+      req.transitOptions = { departureTime: new Date() };
     }
-  });
-};
 
-/**
- * Calculates walking directions for a multi-stop tour using waypoints.
- * Shows a visually distinct panel (pink) to distinguish from single mural discovery.
- */
-window.calculateTourDirections = function(stops, tourName) {
-  if (!userLocation || !stops || stops.length === 0) return;
-  if (infoWindow) infoWindow.close();
-  
-  routeRenderers.forEach(r => r.setMap(null));
-  routeRenderers = [];
-  if (directionsRenderer) directionsRenderer.setMap(null);
-
-  const origin = new google.maps.LatLng(userLocation.lat, userLocation.lng);
-  // Last stop is the destination
-  const lastStop = stops[stops.length - 1];
-  const destination = new google.maps.LatLng(lastStop.lat, lastStop.lng);
-  
-  // Intermediate stops are waypoints
-  const waypoints = stops.slice(0, -1).map(s => ({
-    location: new google.maps.LatLng(s.lat, s.lng),
-    stopover: true
-  }));
-
-  _buildDirectionsPanel(tourName, lastStop.lat, lastStop.lng, true);
-
-  const request = {
-    origin,
-    destination,
-    waypoints,
-    optimizeWaypoints: true,
-    travelMode: google.maps.TravelMode.WALKING
-  };
-
-  directionsService.route(request, (response, status) => {
-    if (status === 'OK') {
-      // Force a "Tour" results object with pink styling
-      const tourMode = { 
-        key: 'WALKING', 
-        label: 'Tour', 
-        color: '#f472b6', 
-        travelMode: google.maps.TravelMode.WALKING 
-      };
-      const results = { WALKING: { response, mode: tourMode } };
-      
-      _updateModeTab('WALKING', response, tourMode);
-      // Indicate other modes aren't active for this tour view
-      ['TRANSIT', 'DRIVING', 'BICYCLING'].forEach(m => _updateModeTab(m, null, {}));
-      
-      _drawMode(results, 'WALKING', origin, destination);
-      _showRouteList(results, 'WALKING', origin, destination);
-      
-      // Select the walking mode by default for the tour
-      window._directionsSelectMode('WALKING');
-    } else {
-      console.error("Tour directions failed:", status);
-    }
+    directionsService.route(req, (response, status) => {
+      completed++;
+      if (status === 'OK') {
+        results[mode.key] = { response, mode };
+        _updateModeTab(mode.key, response, mode);
+      } else {
+        _updateModeTab(mode.key, null, mode);
+      }
+      if (completed === modes.length) {
+        activeModeTab = 'TRANSIT';
+        _drawMode(results, activeModeTab, origin, destination);
+        _showRouteList(results, activeModeTab, origin, destination);
+        window._directionsSelectMode(activeModeTab);
+      }
+    });
   });
 };
 
@@ -2722,6 +2959,7 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
                     line-height:1.3; max-width:230px;">
           ${label}
         </div>
+        <div id="dir-destination-address" style="font-size:12px; color:var(--text-muted); margin-top:6px; max-width:230px; line-height:1.4;"></div>
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
         <button id="dir-panel-clear"
@@ -2729,8 +2967,9 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
                  font-size:10px; font-weight:600; border-radius:999px; padding:2px 8px;
                  cursor:pointer; white-space:nowrap; transition: background 0.2s, border-color 0.2s;"
                  onmouseover="this.style.background='rgba(148,163,184,0.25)';"
-                 onmouseout="this.style.background='rgba(148,163,184,0.15)';">
-          Clear
+                 onmouseout="this.style.background='rgba(148,163,184,0.15)';"
+                 data-is-tour="${isTour}">
+          ${isTour ? 'End Tour' : 'Clear'}
         </button>
         <button id="dir-panel-minimize" title="Minimize"
           style="background:#4a5568; border:1px solid #64748b; color:#ffffff;
@@ -2752,9 +2991,8 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
     </div>
 
     <!-- Mode tabs -->
-    <div id="dir-tabs" style="display:flex; padding:8px 10px 0; gap:4px; flex-shrink:0; overflow-x:auto;
-                               scrollbar-width:none;">
-      <button class="dir-tab ${isTour ? '' : 'dir-tab--active'}" data-mode="TRANSIT" onclick="window._directionsSelectMode('TRANSIT')" style="${isTour ? 'display:none;' : ''}">
+    <div id="dir-tabs" style="display:flex; width:100%; flex-shrink:0; overflow-x:auto; scrollbar-width:none; padding:0; background: rgba(148, 163, 184, 0.05); border-bottom: 1px solid rgba(148, 163, 184, 0.15); gap:0; margin-bottom: 10px;">
+      <button class="dir-tab ${isTour ? '' : 'dir-tab--active'}" data-mode="TRANSIT" onclick="window._directionsSelectMode('TRANSIT')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M297.5-422.5Q280-405 280-380t17.5 42.5Q315-320 340-320t42.5-17.5Q400-355 400-380t-17.5-42.5Q365-440 340-440t-42.5 17.5Zm532.5-93Q880-471 880-400v160q0 33-23.5 56.5T800-160l80 80H520l80-80q-33 0-56.5-23.5T520-240v-160q0-71 50-115.5T700-560q80 0 130 44.5ZM679-291q-9 9-9 21t9 21q9 9 21 9t21-9q9-9 9-21t-9-21q-9-9-21-9t-21 9Zm-91-149q-4 9-6 19t-2 21v40h240v-40q0-11-2-21t-6-19H588ZM480-880q172 0 246 37t74 123v96q-18-6-38-9.5t-42-5.5v-41H240v120h260q-16 17-27.5 37T453-480H240v120q0 33 23.5 56.5T320-280h120v80H320v40q0 17-11.5 28.5T280-120h-40q-17 0-28.5-11.5T200-160v-82q-18-20-29-44.5T160-340v-380q0-83 77-121.5T480-880Zm2 120h224-448 224Zm-224 0h448q-15-17-64.5-28.5T482-800q-107 0-156.5 12.5T258-760Zm195 280Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Transit</span>
         <span id="dir-time-TRANSIT" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
@@ -2764,12 +3002,12 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
         <span style="font-size:11px; font-weight:600; margin-top:2px;">${isTour ? 'Tour Path' : 'Walk'}</span>
         <span id="dir-time-WALKING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="DRIVING" onclick="window._directionsSelectMode('DRIVING')" style="${isTour ? 'display:none;' : ''}">
+      <button class="dir-tab" data-mode="DRIVING" onclick="window._directionsSelectMode('DRIVING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm-32 80v200-200Zm100 160q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Zm-460 40h560v-200H200v200Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Drive</span>
         <span id="dir-time-DRIVING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
       </button>
-      <button class="dir-tab" data-mode="BICYCLING" onclick="window._directionsSelectMode('BICYCLING')" style="${isTour ? 'display:none;' : ''}">
+      <button class="dir-tab" data-mode="BICYCLING" onclick="window._directionsSelectMode('BICYCLING')">
         <span style="font-size:16px;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M200-80q-83 0-141.5-58.5T0-280q0-83 58.5-141.5T200-480q83 0 141.5 58.5T400-280q0 83-58.5 141.5T200-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm155-5v-200L312-512q-12-11-18-25.5t-6-30.5q0-16 6.5-30.5T312-624l112-112q12-12 27.5-18t32.5-6q17 0 32.5 6t27.5 18l76 76q28 28 64 44t76 16v80q-57 0-108.5-22T560-604l-32-32-96 96 88 92v248h-80Zm123.5-563.5Q540-787 540-820t23.5-56.5Q587-900 620-900t56.5 23.5Q700-853 700-820t-23.5 56.5Q653-740 620-740t-56.5-23.5ZM760-80q-83 0-141.5-58.5T560-280q0-83 58.5-141.5T760-480q83 0 141.5 58.5T960-280q0 83-58.5 141.5T760-80Zm85-115q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Z"/></svg></span>
         <span style="font-size:11px; font-weight:600; margin-top:2px;">Bike</span>
         <span id="dir-time-BICYCLING" style="font-size:10px; opacity:0.8; margin-top:1px;">…</span>
@@ -2821,6 +3059,31 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
   // Clear button — resets to default state (removes routes + itinerary, resets tabs)
   panel.querySelector('#dir-panel-clear').addEventListener('click', (e) => {
     e.currentTarget.blur();
+    const isTourPanel = e.currentTarget.dataset.isTour === 'true';
+
+    if (isTourPanel) {
+      // End the tour
+      activeFilters.tour = null;
+      activeTourDefinition = null;
+      activeTourCursor = 0;
+      activeTourOrderedStops = [];
+      if (activeTourPolyline) {
+        activeTourPolyline.setMap(null);
+        activeTourPolyline = null;
+      }
+      tourMarkers.forEach(m => m.setMap(null));
+      tourMarkers = [];
+      applyFilters();
+      renderTourCards();
+      // Close the panel
+      panel.remove();
+      directionsPanel = null;
+      routeRenderers.forEach(r => r.setMap(null));
+      routeRenderers = [];
+      if (directionsRenderer) directionsRenderer.setMap(null);
+      return;
+    }
+
     // Clear drawn routes from map
     routeRenderers.forEach(r => r.setMap(null));
     routeRenderers = [];
@@ -2854,6 +3117,42 @@ function _buildDirectionsPanel(label, destLat, destLng, isTour = false) {
 }
 
 /** Update a mode tab's time estimate once its request returns */
+async function updateDirectionsPanelAddress(lat, lng, explicitText = '') {
+  const labelEl = document.getElementById('dir-destination-address');
+  if (!labelEl) return;
+  if (explicitText && explicitText.trim()) {
+    labelEl.textContent = explicitText.trim();
+    return;
+  }
+
+  labelEl.textContent = 'Loading address...';
+  try {
+    const address = await getAddressFromLatLng(lat, lng);
+    labelEl.textContent = address || 'Address not available';
+  } catch (err) {
+    labelEl.textContent = 'Address not available';
+  }
+}
+
+async function updateTourNextHintAddress(stop) {
+  const hintEl = document.getElementById('tourNextHint');
+  if (!hintEl) return;
+  if (!stop) {
+    hintEl.textContent = 'This is the final stop.';
+    return;
+  }
+
+  const address = stop.address || (stop.neighborhood ? `${stop.neighborhood}, ${stop.borough || 'NY'}` : '');
+  hintEl.textContent = `Next: ${stop.name}` + (address ? ` — ${address}` : '');
+
+  if (!address && stop.lat != null && stop.lng != null) {
+    const resolved = await getAddressFromLatLng(stop.lat, stop.lng);
+    if (hintEl) {
+      hintEl.textContent = `Next: ${stop.name} — ${resolved}`;
+    }
+  }
+}
+
 function _updateModeTab(modeKey, response, mode) {
   const timeEl = document.getElementById(`dir-time-${modeKey}`);
   if (!timeEl) return;
@@ -2865,7 +3164,6 @@ function _updateModeTab(modeKey, response, mode) {
     timeEl.textContent = isHidden ? '' : 'N/A';
     return;
   }
-  // Best duration across all routes for this mode
   const best = response.routes.reduce((min, r) => {
     const secs = r.legs[0]?.duration?.value || Infinity;
     return secs < min ? secs : min;
@@ -3407,6 +3705,26 @@ function setupManualLocationSearch() {
 
   // ── Shared helper: apply a resolved location ──────────────────────────────
   function applyLocation(lat, lng, labelText) {
+    // End active tour when a new address is entered
+    if (activeTourDefinition) {
+      activeFilters.tour = null;
+      activeTourDefinition = null;
+      activeTourCursor = 0;
+      activeTourOrderedStops = [];
+      if (activeTourPolyline) {
+        activeTourPolyline.setMap(null);
+        activeTourPolyline = null;
+      }
+      tourMarkers.forEach(m => m.setMap(null));
+      tourMarkers = [];
+      if (directionsPanel) {
+        directionsPanel.remove();
+        directionsPanel = null;
+      }
+      routeRenderers.forEach(r => r.setMap(null));
+      routeRenderers = [];
+    }
+    
     userLocation = { lat, lng };
     addressInput.value = labelText;
     addressInput.style.borderColor = '#22c55e'; // green = confirmed
@@ -3540,6 +3858,26 @@ function setupManualLocationSearch() {
   if (clearBtn) {
     clearBtn.disabled = true;
     clearBtn.addEventListener('click', () => {
+      // End active tour when address is cleared
+      if (activeTourDefinition) {
+        activeFilters.tour = null;
+        activeTourDefinition = null;
+        activeTourCursor = 0;
+        activeTourOrderedStops = [];
+        if (activeTourPolyline) {
+          activeTourPolyline.setMap(null);
+          activeTourPolyline = null;
+        }
+        tourMarkers.forEach(m => m.setMap(null));
+        tourMarkers = [];
+        if (directionsPanel) {
+          directionsPanel.remove();
+          directionsPanel = null;
+        }
+        routeRenderers.forEach(r => r.setMap(null));
+        routeRenderers = [];
+      }
+      
       addressInput.value = "";
       addressInput.style.borderColor = 'rgba(148,163,184,0.35)';
       clearSearchConnections();
@@ -3582,6 +3920,44 @@ function setupMapControlsToggle() {
   });
 }
 
+/** NEW: Toggles the visibility of the advanced search and filter section. */
+function setupSearchFiltersToggle() {
+  const toggleBtn = document.getElementById("toggleSearchFiltersBtn");
+  const filtersContainer = document.getElementById("searchFiltersContainer");
+  const toggleIcon = document.getElementById("toggleSearchFiltersIcon");
+
+  if (!toggleBtn || !filtersContainer || !toggleIcon) return;
+
+  toggleBtn.addEventListener("click", () => {
+    if (filtersContainer.style.display === "none") {
+      filtersContainer.style.display = "flex";
+      toggleIcon.textContent = "−";
+    } else {
+      filtersContainer.style.display = "none";
+      toggleIcon.textContent = "+";
+    }
+  });
+}
+
+/** NEW: Toggles the visibility of the curated tours section. */
+function setupCuratedToursToggle() {
+  const toggleBtn = document.getElementById("toggleCuratedToursBtn");
+  const toursContainer = document.getElementById("curatedToursContainer");
+  const toggleIcon = document.getElementById("toggleCuratedToursIcon");
+
+  if (!toggleBtn || !toursContainer || !toggleIcon) return;
+
+  toggleBtn.addEventListener("click", () => {
+    if (toursContainer.style.display === "none") {
+      toursContainer.style.display = "flex";
+      toggleIcon.textContent = "−";
+    } else {
+      toursContainer.style.display = "none";
+      toggleIcon.textContent = "+";
+    }
+  });
+}
+
 // Expose to global so Google Maps callback can find it
 window.initMap = initMap;
 
@@ -3593,6 +3969,12 @@ window.initMap = initMap;
     if (typeof initLayoutControls === 'function') initLayoutControls();
     if (typeof setupThemeToggle === 'function') setupThemeToggle();
     if (typeof setupMapControlsToggle === 'function') setupMapControlsToggle();
+    if (typeof setupSearchFiltersToggle === 'function') setupSearchFiltersToggle(); // Existing toggle
+    if (typeof setupCuratedToursToggle === 'function') setupCuratedToursToggle();   // New toggle
+    
+    // Initialize range sliders immediately so fills are rendered on load
+    if (typeof setupMuralView === 'function') setupMuralView();
+    if (typeof setupCustomTourRadiusControl === 'function') setupCustomTourRadiusControl();
   };
 
   if (document.readyState === 'loading') {
