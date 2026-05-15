@@ -174,8 +174,8 @@ body:not(.light-mode) #map-container {
 
 #app {
   position: relative;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   background: radial-gradient(circle at top, rgba(59, 130, 246, 0.25), transparent 45%),
     radial-gradient(circle at 20% 80%, rgba(244, 114, 182, 0.18), transparent 50%),
@@ -199,7 +199,7 @@ body:not(.light-mode) #map-container {
   top: clamp(24px, 5vh, 64px);
   left: clamp(16px, 4vw, 56px);
   width: min(320px, calc(100% - 32px));
-  max-height: calc(100vh - clamp(32px, 8vh, 96px));
+  max-height: calc(100% - 40px);
   padding: 20px 20px 24px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
@@ -219,7 +219,8 @@ body:not(.light-mode) #map-container {
   pointer-events: none;
 }
 
-@media (min-width: 1025px) {
+/* Ensure sidebar stays on the left even in smaller WordPress containers */
+@media (min-width: 600px) {
   #sidebar.hidden {
     transform: translateX(calc(-100% - 20px));
   }
@@ -982,20 +983,10 @@ body:not(.light-mode) #map-container {
   background: rgba(239, 68, 68, 0.32);
   color: #fee2e2;
 }
+/* Removed the 1024px centering rule to keep it left-aligned in WordPress */
 
-@media (max-width: 1024px) {
-  #sidebar {
-    width: min(360px, calc(100% - 32px));
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  
-  #sidebar.hidden {
-    transform: translateX(calc(-100% - 20px));
-  }
-}
-
-@media (max-width: 768px) {
+/* Only switch to mobile bottom-drawer mode when the box is extremely narrow */
+@media (max-width: 480px) {
   #sidebar {
     width: 100%;
     max-width: none;

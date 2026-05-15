@@ -2186,8 +2186,8 @@ function initLayoutControls() {
   const hideBtn = document.getElementById("sidebarHideBtn") || document.querySelector(".sidebar-hide-btn");
   const showTab = document.getElementById("sidebarShowTab") || document.querySelector(".sidebar-show-tab");
   const sidebar = document.getElementById("sidebar");
-  const body = document.body;
-  const mq = window.matchMedia("(max-width: 768px)");
+  const body = document.body; // Reference to the body element
+  const mq = window.matchMedia("(max-width: 480px)"); // Use mobile breakpoint for auto-hide
 
   function updateSidebarVisibility(isVisible) {
     if (isVisible) {
