@@ -1198,11 +1198,15 @@ function showMuralPopup(marker) {
 
   // Check if there is a tour-specific narrative for this mural
   let tourNarrative = null;
-  if (activeTourDefinition && activeTourDefinition.detailedStops) {
-    const detailedStop = activeTourDefinition.detailedStops.find(ds => ds.uid === m.uid);
-    if (detailedStop) {
-      tourNarrative = detailedStop.narrative;
+  if (activeTourDefinition) {
+    // 1. Check for hardcoded narrative in config.js (highest priority)
+    if (activeTourDefinition.detailedStops) {
+      const detailedStop = activeTourDefinition.detailedStops.find(ds => ds.uid === m.uid);
+      if (detailedStop) tourNarrative = detailedStop.narrative;
     }
+    
+    // 2. Fallback to the CSV's tour_description if no hardcoded narrative exists
+    if (!tourNarrative) tourNarrative = m.description;
   }
 
   const html = `
@@ -1325,12 +1329,13 @@ function showMuralPopup(marker) {
       </div>
 
       <!-- Mural Description -->
+      ${(m.description || m.theme) && m.description !== tourNarrative ? `
       <div style="margin-bottom: 16px;">
         <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--heading-color); text-align: center; text-transform: uppercase; letter-spacing: 0.5px;">Mural Description</h3>
         <div style="color: var(--text-main); font-size: 14px; line-height: 1.6;">
-          ${m.description || m.theme || 'No description available for this mural.'}
+          ${m.description || m.theme}
         </div>
-      </div>
+      </div>` : (!tourNarrative && !m.theme ? '<div style="margin-bottom:16px; font-size:14px; color:var(--text-muted); text-align:center;">No description available for this mural.</div>' : '')}
 
       <!-- Street View Panel Container -->
       <div id="${popupId}-streetview-panel" style="display:none; width:100%; height:250px; border-radius:8px; margin-bottom:16px; overflow:hidden; background:#000;"></div>
@@ -1591,6 +1596,7 @@ function renderTourItinerary() {
         <div class="stop-content">
           <h4>${stop.name}</h4>
           <p>${stop.school || stop.borough}</p>
+          ${stop.description ? `<p style="font-size:11px; opacity:0.7; font-style:italic; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.4;">${stop.description}</p>` : ''}
         </div>
       </div>
     `;
