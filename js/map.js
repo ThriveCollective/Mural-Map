@@ -53,7 +53,7 @@ function getInitialThemeIsLight() {
 }
 
 // Apply the initial theme to the body immediately to prevent flashing
-document.body.classList.toggle('light-mode', getInitialThemeIsLight());
+document.documentElement.classList.toggle('light-mode', getInitialThemeIsLight());
 
 // ── Reverse-geocoding ────────────────────────────────────────────────────────
 // geocoder is initialised inside initMap() once the Maps API is ready.
@@ -2689,6 +2689,28 @@ async function initMap() {
       });
     }
 
+    // ── Handle Fullscreen State ──────────────────────────────────────────────
+    // Listen for fullscreen changes and toggle UI visibility
+    const mapElement = document.getElementById('map');
+    const mapContainerElement = document.getElementById('map-container');
+    const htmlElement = document.documentElement;
+    
+    function updateFullscreenState() {
+      const fullscreenEl = document.fullscreenElement;
+      const isFullscreen = fullscreenEl === mapElement || fullscreenEl === mapContainerElement;
+      if (isFullscreen) {
+        htmlElement.classList.add('fullscreen-active');
+      } else {
+        htmlElement.classList.remove('fullscreen-active');
+      }
+    }
+    
+    // Listen for fullscreen changes (multiple event names for cross-browser support)
+    document.addEventListener('fullscreenchange', updateFullscreenState);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenState);
+    document.addEventListener('mozfullscreenchange', updateFullscreenState);
+    document.addEventListener('MSFullscreenChange', updateFullscreenState);
+
   } catch (err) {
     console.error(err);
     showError(true, err.message || "Failed to load mural data.");
@@ -3904,11 +3926,11 @@ function setupThemeToggle() {
   if (!toggleBtn || !toggleText) return;
 
   // Set initial label
-  const isInitiallyLight = document.body.classList.contains('light-mode');
+  const isInitiallyLight = document.documentElement.classList.contains('light-mode');
   toggleText.textContent = isInitiallyLight ? "Dark Mode" : "Light Mode";
 
   toggleBtn.addEventListener('click', () => {
-    const isLight = document.body.classList.toggle('light-mode');
+    const isLight = document.documentElement.classList.toggle('light-mode');
     localStorage.setItem('theme', isLight ? 'light' : 'dark');
     toggleText.textContent = isLight ? "Dark Mode" : "Light Mode";
     

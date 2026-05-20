@@ -28,7 +28,7 @@
   --brand-pink-bg-opacity: rgba(244, 114, 182, 0.15);
 }
 
-.light-mode {
+html.light-mode {
   --bg-color: #ffffff;
   --text-main: #000000;
   --text-muted: #475569; /* Darker muted text for better accessibility in light mode */
@@ -47,7 +47,7 @@
   --logo-bg: #94a3b8;
 }
 
-.light-mode .nearest-card p,
+html.light-mode .nearest-card p,
 .light-mode .distance-pill {
   color: #000000;
 }
@@ -66,7 +66,8 @@ body {
 }
 
 /* ── Force Map Image to Dark Mode ── */
-body:not(.light-mode) #map {
+html:not(.light-mode) #map,
+html:not(.light-mode) #map:fullscreen {
   /* Inverts light tiles to dark. We use hardware acceleration hints to reduce lag. */
   filter: invert(100%) hue-rotate(180deg) brightness(0.9) contrast(1.2);
   background: #000000 !important;
@@ -77,26 +78,55 @@ body:not(.light-mode) #map {
 
 /* ── Un-invert and Brighten original colors for markers and popups ── */
 /* This ensures the pins and popups look "normal" even though the map is inverted */
-body:not(.light-mode) .mural-marker-vnode {
+html:not(.light-mode) .mural-marker-vnode,
+html:not(.light-mode) #map:fullscreen .mural-marker-vnode {
   filter: invert(100%) hue-rotate(180deg) brightness(1.2) saturate(1.4);
   will-change: filter;
 }
 
-body:not(.light-mode) .gm-style-iw-c {
+html:not(.light-mode) .gm-style-iw-c,
+html:not(.light-mode) #map:fullscreen .gm-style-iw-c {
   filter: invert(100%) hue-rotate(180deg) brightness(1.1);
 }
 
 /* ── Un-invert UI controls (Zoom, Street View, etc.) ── */
-body:not(.light-mode) .gmnoprint button,
-body:not(.light-mode) .gm-control-active,
-body:not(.light-mode) .gm-svpc,
-body:not(.light-mode) .gm-fullscreen-control {
+html:not(.light-mode) .gmnoprint button,
+html:not(.light-mode) .gm-control-active,
+html:not(.light-mode) .gm-svpc,
+html:not(.light-mode) .gm-fullscreen-control,
+html:not(.light-mode) #map:fullscreen .gmnoprint button {
   filter: invert(100%) hue-rotate(180deg);
 }
 
 /* Optimized Dark Mode Map Background */
-body:not(.light-mode) #map-container {
+html:not(.light-mode) #map-container {
   background: #000000 !important;
+}
+
+/* ── Hide UI elements when map is in fullscreen ── */
+html.fullscreen-active #sidebar,
+html.fullscreen-active .sidebar-show-tab,
+html.fullscreen-active #viewAllModal,
+html.fullscreen-active #directions-panel {
+  display: none !important;
+  pointer-events: none;
+}
+
+/* Ensure map-container takes full screen */
+html.fullscreen-active #map-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+}
+
+/* Hide toast notifications in fullscreen */
+html.fullscreen-active .toast {
+  display: none !important;
 }
 
 /* ── Optimized Marker Styles (using minimal DOM nodes) ── */
@@ -199,7 +229,7 @@ body:not(.light-mode) #map-container {
   top: clamp(24px, 5vh, 64px);
   left: clamp(16px, 4vw, 56px);
   width: min(320px, calc(100% - 32px));
-  max-height: calc(100% - 40px);
+  max-height: calc(100vh - clamp(32px, 8vh, 96px));
   padding: 20px 20px 24px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
@@ -219,8 +249,7 @@ body:not(.light-mode) #map-container {
   pointer-events: none;
 }
 
-/* Ensure sidebar stays on the left even in smaller WordPress containers */
-@media (min-width: 600px) {
+@media (min-width: 1025px) {
   #sidebar.hidden {
     transform: translateX(calc(-100% - 20px));
   }
@@ -983,28 +1012,17 @@ body:not(.light-mode) #map-container {
   background: rgba(239, 68, 68, 0.32);
   color: #fee2e2;
 }
-/* Removed the 1024px centering rule to keep it left-aligned in WordPress */
 
-/* Only switch to mobile bottom-drawer mode when the box is extremely narrow */
-@media (max-width: 480px) {
+@media (max-width: 1024px) {
   #sidebar {
-    width: 100%;
-    max-width: none;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: auto;
-    border-radius: 32px 32px 0 0;
-    max-height: 85vh;
-    transform: translateY(calc(100% + 32px));
-    transition: transform 0.35s ease, opacity 0.35s ease;
-    padding: 24px 24px 32px;
-    border-left: none;
-    border-right: none;
+    left: clamp(12px, 3vw, 24px);
+    width: min(310px, calc(100% - 24px));
   }
+}
 
-  body.sidebar-open #sidebar {
-    transform: translateY(0);
+@media (max-width: 768px) {
+  #sidebar {
+    top: 16px;
   }
   
   #sidebar.hidden {
