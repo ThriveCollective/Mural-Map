@@ -33,6 +33,7 @@ let activeTourCursor = 0; // Current stop index in the active tour
 let activeTourOrderedStops = []; // Ordered list of stops for the active tour
 // Services for Directions
 let zoomTimeout;
+let lastZoomLevel = null;
 let directionsService = null;
 let directionsRenderer = null;
 let routeRenderers = [];
@@ -2172,14 +2173,17 @@ function setupFilterControls() {
 /** Efficient zoom handler for clustering */
 function onZoomChanged() {
   if (!map || !clusterer) return;
-  
+
   const currentZoom = map.getZoom();
+  if (currentZoom === lastZoomLevel) return;
+  lastZoomLevel = currentZoom;
   if (activeFilters.muralView === 25) return;
 
   clearTimeout(zoomTimeout);
   zoomTimeout = setTimeout(() => {
+    if (!map || map.getZoom() !== currentZoom) return;
     updateClusterer();
-  }, 300);
+  }, 500);
 }
 
 function initLayoutControls() {
@@ -2602,21 +2606,28 @@ async function initMap() {
     }
 
     const isLight = getInitialThemeIsLight();
+    const isPhoneViewport = window.matchMedia("(max-width: 768px)").matches;
     map = new google.maps.Map(document.getElementById("map"), {
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
       mapId: MAP_ID,
       mapTypeControl: false,
       zoomControl: true,
-      zoomControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
+      zoomControlOptions: { position: isPhoneViewport ? google.maps.ControlPosition.RIGHT_BOTTOM : google.maps.ControlPosition.LEFT_BOTTOM },
       scaleControl: true,
       fullscreenControl: true,
       streetViewControl: true,
-      controlSize: 22,
+      controlSize: isPhoneViewport ? 28 : 22,
+      gestureHandling: isPhoneViewport ? 'greedy' : 'auto',
+      disableDoubleClickZoom: isPhoneViewport,
       backgroundColor: isLight ? '#f8fafc' : '#030712'
     });
     
-    map.addListener('zoom_changed', onZoomChanged);
+    if (isPhoneViewport) {
+      map.addListener('idle', onZoomChanged);
+    } else {
+      map.addListener('zoom_changed', onZoomChanged);
+    }
 
     directionsService = new google.maps.DirectionsService();
     directionsRenderer = new google.maps.DirectionsRenderer({
