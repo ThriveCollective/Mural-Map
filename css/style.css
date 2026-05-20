@@ -1023,10 +1023,21 @@ html.fullscreen-active .toast {
 @media (max-width: 768px) {
   #sidebar {
     top: 16px;
+    width: calc(100% - 20px);
+    left: 10px;
+    right: 10px;
+    max-height: calc(100vh - 32px);
   }
   
   #sidebar.hidden {
     transform: translateY(calc(100% + 32px));
+  }
+
+  #sidebar:not(.hidden) {
+    border-radius: 0;
+    width: calc(100% - 16px);
+    left: 8px;
+    right: 8px;
   }
 
   #map-loading,

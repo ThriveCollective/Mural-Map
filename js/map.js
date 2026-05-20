@@ -2187,7 +2187,7 @@ function initLayoutControls() {
   const showTab = document.getElementById("sidebarShowTab") || document.querySelector(".sidebar-show-tab");
   const sidebar = document.getElementById("sidebar");
   const body = document.body; // Reference to the body element
-  const mq = window.matchMedia("(max-width: 480px)"); // Use mobile breakpoint for auto-hide
+  const mq = window.matchMedia("(max-width: 768px)"); // Use phone breakpoint for auto-hide on mobile devices
 
   function updateSidebarVisibility(isVisible) {
     if (isVisible) {
