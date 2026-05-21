@@ -1586,11 +1586,17 @@ function renderTourItinerary() {
   const tourEntry = curatedTourStops.get(activeTourDefinition.id);
   if (!tourEntry) return;
   const stops = orderStopsForTour(tourEntry.stops);
+  const escapeAttr = (value) => String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
   
   stops.forEach((stop, idx) => {
     const isActiveStop = idx === activeTourCursor;
     html += `
-      <div class="tour-itinerary-card${isActiveStop ? ' active-stop' : ''}" onclick="focusOnMuralByUid('${stop.uid}')">
+      <div class="tour-itinerary-card${isActiveStop ? ' active-stop' : ''}" data-stop-uid="${escapeAttr(stop.uid)}">
         <div class="stop-badge" style="background: ${tourColor}">${idx + 1}</div>
         <div class="stop-content">
           <h4>${stop.name}</h4>
@@ -1603,6 +1609,11 @@ function renderTourItinerary() {
 
   html += `</div></div>`;
   container.innerHTML = html;
+  container.querySelectorAll('.tour-itinerary-card').forEach(card => {
+    const uid = card.dataset.stopUid;
+    if (!uid) return;
+    card.addEventListener('click', () => focusOnMuralByUid(uid));
+  });
 
   container.querySelector('#backToTours').onclick = () => {
     activeFilters.tour = null;
@@ -1660,7 +1671,6 @@ function setActiveTourStop(index) {
   }
 
   focusOnMuralByUid(stop.uid);
-  renderTourItinerary();
 }
 
 function refreshCustomTourIfActive() {
@@ -2438,11 +2448,9 @@ function focusOnMuralByUid(uid) {
       const nextStop = activeTourOrderedStops[activeTourCursor + 1];
       updateTourNextHintAddress(nextStop);
       const currentStop = activeTourOrderedStops[activeTourCursor];
-      if (currentStop && directionsPanel) {
-        updateDirectionsPanelAddress(currentStop.lat, currentStop.lng, currentStop.address || '');
+      if (currentStop && userLocation) {
+        window.calculateTransitDirections(currentStop.lat, currentStop.lng, currentStop.name);
       }
-      // Automatically calculate tour directions when clicking a tour stop
-      window.calculateTourDirections(activeTourOrderedStops, activeTourDefinition.name);
     }
   }
 
