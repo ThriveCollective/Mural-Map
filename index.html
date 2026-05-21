@@ -42,8 +42,8 @@
               <span class="info-tip" data-tip="Exterior: Public murals. Interior: Inside buildings. Any: Mixed tour.">ⓘ</span>
             </label>
             <select id="customTourSetting" class="filter-select">
-              <option value="any">Any Setting (Mixed)</option>
-              <option value="exterior">Exterior Only</option>
+              <option value="exterior" selected>Exterior Only</option>
+              <option value="any">Both Exterior+Interior</option>
               <option value="interior">Interior Only</option>
             </select>
           </div>
@@ -103,20 +103,6 @@
               </div>
 
               <div class="filter-group">
-                <label for="artistFilter">Artist</label>
-                <select id="artistFilter" class="filter-select">
-                  <option value="">All Artists</option>
-                </select>
-              </div>
-
-              <div class="filter-group">
-                <label for="themeFilter">Theme</label>
-                <select id="themeFilter" class="filter-select">
-                  <option value="">All Themes</option>
-                </select>
-              </div>
-
-              <div class="filter-group">
                 <label for="settingFilter">Setting</label>
                 <select id="settingFilter" class="filter-select">
                   <option value="">All Settings</option>
@@ -170,13 +156,13 @@
         <section class="tours-panel">
           <div style="border-top: 1px solid var(--panel-border); margin-top: 10px; padding-top: 5px;">
             <button id="toggleCuratedToursBtn" class="view-all-btn" style="width: 100%; text-align: left; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; text-decoration: none; font-weight: 600; color: var(--heading-color); text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px;">
-              <span>Curated Tours</span>
+              <span>Curated Tour</span>
               <span id="toggleCuratedToursIcon">+</span>
             </button>
 
             <div id="curatedToursContainer" style="display: none; flex-direction: column; gap: 20px;">
               <p class="tours-panel-subtitle">
-                Routes that chain murals by borough. Use them as starting points for walking tours.
+                Generate a custom walking route near you using the "Create Local Tour" feature.
               </p>
               <div id="tourCards" class="tour-card-grid">
                 <!-- Populated via JS -->

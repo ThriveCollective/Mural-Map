@@ -9,8 +9,6 @@ let activeFilters = {
   year: null,
   school: null,
   borough: null,
-  artist: null, // NEW: Filter by artist
-  theme: null,  // NEW: Filter by theme
   setting: null, // NEW: Filter by setting
   tour: null,
   muralView: 100 // Percentage of murals to show (25, 50, 75, 100)
@@ -318,7 +316,7 @@ function renderTourCards() {
   if (!curatedTours.length) {
     const note = document.createElement("p");
     note.className = "tours-panel-subtitle";
-    note.textContent = "Add tour definitions in js/config.js to surface curated walking routes.";
+    note.textContent = "Use 'Create Local Tour' above to generate a custom itinerary.";
     container.appendChild(note);
     return;
   }
@@ -1673,7 +1671,7 @@ function refreshCustomTourIfActive() {
   const limitEl = document.getElementById('customTourLimit');
   if (!settingEl || !radiusEl || !limitEl) return;
 
-  const selectedSetting = settingEl.value || 'any';
+  const selectedSetting = settingEl.value || 'exterior';
   const radiusMiles = Number(radiusEl.value) || 1;
   const limitStops = Number(limitEl.value) || 6;
   const radiusMeters = Math.max(0.5, radiusMiles) * 1609.344;
@@ -1709,8 +1707,8 @@ function refreshCustomTourIfActive() {
   }
 }
 
-function getNearbyTourStops(origin, radiusMeters, limit = 6, selectedSetting = 'any') {
-  const normalizedSetting = (selectedSetting || 'any').toLowerCase();
+function getNearbyTourStops(origin, radiusMeters, limit = 6, selectedSetting = 'exterior') {
+  const normalizedSetting = (selectedSetting || 'exterior').toLowerCase();
 
   const nearby = allMurals
     .filter(m => m.lat !== null && m.lng !== null)
@@ -1767,14 +1765,12 @@ function createCustomTourNearMe() {
   activeFilters.year = null;
   activeFilters.school = null;
   activeFilters.borough = null;
-  activeFilters.artist = null;
-  activeFilters.theme = null;
   activeFilters.setting = null;
 
   const settingEl = document.getElementById('customTourSetting');
   const radiusEl = document.getElementById('customTourRadius');
   const limitEl = document.getElementById('customTourLimit');
-  const selectedSetting = settingEl ? settingEl.value : 'any';
+  const selectedSetting = settingEl ? settingEl.value : 'exterior';
   const radiusMiles = radiusEl ? Number(radiusEl.value) : 1;
   const limitStops = limitEl ? Number(limitEl.value) : 6;
   const radiusMeters = Math.max(0.5, radiusMiles) * 1609.344;
@@ -1856,20 +1852,6 @@ function applyFilters() {
       }
     }
 
-    // Artist filter
-    if (activeFilters.artist !== null) {
-      if (!(m.artist_names && m.artist_names.split(REGEX_ARTIST_SPLIT).includes(activeFilters.artist))) {
-        return false;
-      }
-    }
-
-    // Theme filter
-    if (activeFilters.theme !== null) {
-      if (!(m.theme && m.theme.split(REGEX_THEME_SPLIT).includes(activeFilters.theme))) {
-        return false;
-      }
-    }
-
     // Setting filter
     if (activeFilters.setting !== null) {
       const mSetting = (m.setting || "").toLowerCase();
@@ -1931,16 +1913,12 @@ function populateFilters() {
   const schools = new Set();
   const boroughs = new Set();
   const dataTours = new Set();
-  const artists = new Set(); // NEW
-  const themes = new Set();   // NEW
   const settings = new Set(); // NEW
 
   allMurals.forEach(m => {
     if (m.year) years.add(m.year);
     if (m.school) schools.add(m.school);
     if (m.borough) boroughs.add(m.borough);
-    if (m.artist_names) m.artist_names.split(REGEX_ARTIST_SPLIT).filter(Boolean).forEach(a => artists.add(a));
-    if (m.theme) m.theme.split(REGEX_THEME_SPLIT).filter(Boolean).forEach(t => themes.add(t));
     if (m.setting) settings.add(m.setting);
     if (m.tour_id) dataTours.add(m.tour_id);
   });
@@ -1948,8 +1926,6 @@ function populateFilters() {
   const sortedYears    = Array.from(years).sort((a, b) => Number(b) - Number(a));
   const sortedSchools  = Array.from(schools).sort();
   const sortedBoroughs = Array.from(boroughs).sort();
-  const sortedArtists  = Array.from(artists).sort(); // NEW
-  const sortedThemes   = Array.from(themes).sort();   // NEW
   const sortedSettings = Array.from(settings).sort(); // NEW
 
   // ── helper: rebuild a <select> without losing the listener ────────────────
@@ -2022,8 +1998,7 @@ function populateFilters() {
 function clearAllFilters() {
   activeFilters = {
     search: "", year: null, school: null, borough: null,
-    artist: null, theme: null, setting: null, // NEW: Reset new filters
-    tour: null, muralView: 100
+    setting: null, tour: null, muralView: 100
   };
 
   // Helper to safely clear values only if the element exists in the HTML
@@ -2036,8 +2011,6 @@ function clearAllFilters() {
   safeClearValue("yearFilter");
   safeClearValue("schoolsFilter");
   safeClearValue("boroughFilter");
-  safeClearValue("artistFilter");
-  safeClearValue("themeFilter");
   safeClearValue("settingFilter");
   safeClearValue("toursFilter");
 
@@ -2254,7 +2227,7 @@ function updateCustomTourSummary() {
 
   const radiusMiles = Number(radiusEl.value) || 1;
   const limitStops = Number(limitEl.value) || 6;
-  const selectedSetting = settingEl.value || 'any';
+  const selectedSetting = settingEl.value || 'exterior';
 
   if (!userLocation) {
     summary.textContent = 'Set your location first to preview local tour stops.';
