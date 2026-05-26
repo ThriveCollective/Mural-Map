@@ -23,7 +23,8 @@ function replacePlaceholder(filePath, placeholder, value, label) {
   }
 
   if (!value) {
-    console.warn(`⚠️ Environment variable for ${label} is not set. Leaving placeholder unchanged.`);
+    console.warn(`⚠️ Environment variable for ${label} is not set. Skipping injection.`);
+    return;
   }
 
   const replacedContent = content.split(placeholder).join(value);
