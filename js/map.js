@@ -2304,16 +2304,15 @@ function requestUserLocation() {
   navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError, LOCATION_OPTIONS);
 }
 
-function handleLocationSuccess(position, addressLabel = "Current Location") { // NEW: Added addressLabel parameter
+function handleLocationSuccess(position) {
   setLocateButtonState(false);
   const coords = {
-    lat: position.coords.latitude, // NEW: Fixed typo from 'position.coords.latitude'
+    lat: position.coords.latitude,
     lng: position.coords.longitude
   };
   userLocation = coords;
   setUserLocationMarker(coords, position.coords.accuracy);
-  const nearest = findNearestMurals();
-  renderNearestList(nearest);
+  applyFilters(); // Ensure nearest murals and route connections are rendered immediately
   updateCustomTourSummary();
 
   const clearBtn = document.getElementById("clearLocationBtn");
@@ -2332,18 +2331,20 @@ function handleLocationError(error) {
   renderNearestList([], message);
 }
 
-function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "") {
+function setUserLocationMarker(position, accuracyMeters = 50) {
   if (!map) return;
 
-  const labelHtml = addressLabel ? `<div style="background: #3b82f6; color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; border: 2.5px solid white; line-height: 1;">${addressLabel}</div>` : '';
+  // Hardcoded label as requested
+  const labelHtml = `<div style="background: #3b82f6; color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; border: 2.5px solid white; line-height: 1;">You are here</div>`;
 
   // Anchor logic: AdvancedMarkerElement anchors the center of the content to the position.
   // We use translateY(-50%) to shift the marker assembly so the bottom (the red dot) 
   // rests exactly on the user's coordinate on the map.
+  // Added mural-marker-vnode class to ensure it's not inverted in dark mode
   const markerContent = createMarkerElement(`
-    <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">
+    <div class="mural-marker-vnode" style="display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">
       ${labelHtml}
-      <div class="mural-marker-vnode" style="width:26px; height:26px; background:#ef4444; border:4px solid white; border-radius:50%; box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); flex-shrink: 0; position:relative;">
+      <div style="width:26px; height:26px; background:#ef4444; border:4px solid white; border-radius:50%; box-shadow: 0 0 25px rgba(239, 68, 68, 0.7); flex-shrink: 0; position:relative;">
         <div class="user-location-pulse"></div>
       </div>
     </div>
@@ -2378,8 +2379,6 @@ function setUserLocationMarker(position, accuracyMeters = 50, addressLabel = "")
   userLocationMarker.map = map;
 
   map.panTo(position);
-  // Set a precise street-level zoom if zoomed out
-  if (map.getZoom() < 16) map.setZoom(16);
 }
 
 function clearUserLocation() {
@@ -3748,7 +3747,7 @@ function setupManualLocationSearch() {
     userLocation = { lat, lng };
     addressInput.value = labelText;
     addressInput.style.borderColor = '#22c55e'; // green = confirmed
-    setUserLocationMarker(userLocation, 50, labelText);
+    setUserLocationMarker(userLocation, 50);
     
     // Let applyFilters handle the logic of finding nearest and updating markers
     applyFilters();
@@ -3858,9 +3857,8 @@ function setupManualLocationSearch() {
         (position) => {
           applyLocation(
             position.coords.latitude,
-            position.coords.longitude, // Fixed typo
-            "Current Location",
-            "Your GPS Location"
+            position.coords.longitude,
+            "Current Location"
           );
           gpsBtn.textContent = "Use Device GPS";
           gpsBtn.disabled = false;
