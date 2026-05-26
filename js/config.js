@@ -5,8 +5,7 @@ window.MURAL_MAP_CONFIG = {
     // 1. CSV URL from "Publish to web" in Google Sheets (format: CSV).
     // Example:
     // "https://docs.google.com/spreadsheets/d/XYZ/pub?output=csv"
-  CSV_URL:
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQGG7nJALaHS51jJ7BEcfeu-MqPPoTXUo5hkJd1NE-tTn9W76gduRp5dPDoOEsQMFbd8LYm4Oq8-R9_/pub?output=csv",
+  CSV_URL: "__CSV_URL_PLACEHOLDER__",
       
     // 2. Default map view (New York City center).
     DEFAULT_CENTER: { lat: 40.7128, lng: -74.006 },
@@ -22,8 +21,4 @@ window.MURAL_MAP_CONFIG = {
   };
   
 // Curated tours that can be extended by Thrive staff.
-// Add a new object with an `id`, `name`, `description`, `borough`,
-// optional highlight `color`, and `keywords` that help match murals.
-// Keywords are matched against mural name, school, borough, and theme fields.
-// Use `limit` to cap the number of stops that are auto-selected.
 window.MURAL_TOURS = [];
