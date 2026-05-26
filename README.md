@@ -8,6 +8,14 @@ A prototype map application that displays murals from a Google Sheet using the G
 
 2. **Add your Google Maps API Key**: Edit `index.html` and replace `YOUR_GOOGLE_MAPS_API_KEY` with your actual API key (or update the existing key if needed).
 
+### Vercel deployment
+If you deploy on Vercel, the project now includes `build.js` and `package.json` so Vercel can inject secrets during its build.
+
+- Add environment variables in Vercel Settings:
+  - `CSV` → published Google Sheets CSV URL
+  - `MAP_API` → Google Maps API key
+- Vercel runs `npm run build` and replaces the placeholders in `js/config.js` and `index.html` before deployment.
+
 ## Running the Application
 
 **Important**: You cannot open `index.html` directly in a browser (using `file://` protocol) because browsers block fetch requests to external URLs due to CORS restrictions.
