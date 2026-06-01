@@ -13,6 +13,7 @@ let activeFilters = {
   tour: null,
   muralView: 100 // Percentage of murals to show (25, 50, 75, 100)
 };
+let narratorEnabled = localStorage.getItem('enableNarrator') === 'true';
 let userLocation = null;
 let userLocationMarker = null;
 let userAccuracyCircle = null;
@@ -758,18 +759,27 @@ async function loadMuralsFromSheet() {
  * Helper to create DOM elements for AdvancedMarkerElement content.
  * Optimized to return a single div node instead of an SVG with multiple children.
  */
-function createMarkerElement(htmlOrClass, color = null, text = '') {
-  if (typeof htmlOrClass === 'string' && !htmlOrClass.startsWith('<')) {
-    const el = document.createElement('div');
-    el.className = `mural-marker-vnode ${htmlOrClass}`;
-    if (color) el.style.setProperty('--marker-color', color);
-    if (text) el.textContent = text;
-    return el;
+function createMarkerElement(type = 'marker-dot', color, label) {
+  if (typeof type === 'string' && type.trim().startsWith('<')) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = type.trim();
+    return wrapper.firstElementChild || wrapper;
   }
-  const div = document.createElement('div');
-  div.className = 'mural-marker-vnode';
-  div.innerHTML = htmlOrClass.trim();
-  return div.firstChild;
+
+  const el = document.createElement('div');
+  el.className = type;
+  if (color) {
+    el.style.setProperty('--marker-color', color);
+  }
+
+  if (label !== undefined && label !== null) {
+    const labelEl = document.createElement('div');
+    labelEl.textContent = label;
+    labelEl.style.cssText = 'position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:100%; text-align:center; font-size:inherit; font-weight:700; line-height:1; pointer-events:none;';
+    el.appendChild(labelEl);
+  }
+
+  return el;
 }
 
 /**
@@ -916,8 +926,8 @@ function createMarkers(murals) {
 
 // Create custom renderer for blue clusters
 function createClusterRenderer() {
-  // Use yellow for clusters if we are currently highlighting nearest murals
-  const clusterColor = "#65cccc";
+  // Use bright blue for clusters
+  const clusterColor = "#3b82f6";
 
   return {
     render: ({ count, position }) => {
@@ -1369,6 +1379,12 @@ function showMuralPopup(marker) {
 
   infoWindow.setContent(html);
   infoWindow.open(map, marker);
+
+  if (narratorEnabled && window.speechSynthesis) {
+    const speechDescription = tourNarrative && tourNarrative !== m.description ? tourNarrative : m.description;
+    const narrationText = [m.name, speechDescription].filter(Boolean).join('. ');
+    speakNarration(narrationText);
+  }
   
   // Style the info window and set up close button functionality
   setTimeout(() => {
@@ -1409,6 +1425,9 @@ function showMuralPopup(marker) {
     const customCloseBtn = document.getElementById(`${popupId}-close`);
     if (customCloseBtn) {
       customCloseBtn.addEventListener('click', () => {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
         infoWindow.close();
       });
     }
@@ -3929,6 +3948,32 @@ function setupThemeToggle() {
   });
 }
 
+function setupNarratorToggle() {
+  const toggle = document.getElementById('enableNarrator');
+  if (!toggle) return;
+
+  toggle.checked = narratorEnabled;
+  toggle.addEventListener('change', (event) => {
+    narratorEnabled = event.target.checked;
+    localStorage.setItem('enableNarrator', narratorEnabled);
+    if (!narratorEnabled && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  });
+}
+
+function speakNarration(text) {
+  if (!narratorEnabled || !text || typeof window.speechSynthesis === 'undefined') return;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  utterance.lang = 'en-US';
+  window.speechSynthesis.speak(utterance);
+}
+
 /** Toggles the standard Google Maps navigation UI */
 function setupMapControlsToggle() {
   const toggle = document.getElementById('toggleMapUI');
@@ -3986,6 +4031,7 @@ window.initMap = initMap;
   const start = () => {
     if (typeof initLayoutControls === 'function') initLayoutControls();
     if (typeof setupThemeToggle === 'function') setupThemeToggle();
+    if (typeof setupNarratorToggle === 'function') setupNarratorToggle();
     if (typeof setupMapControlsToggle === 'function') setupMapControlsToggle();
     if (typeof setupSearchFiltersToggle === 'function') setupSearchFiltersToggle(); // Existing toggle
     if (typeof setupCuratedToursToggle === 'function') setupCuratedToursToggle();   // New toggle
