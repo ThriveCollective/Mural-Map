@@ -702,6 +702,13 @@ async function loadMuralsFromSheet() {
       throw new Error("Could not find name column. Expected one of: mural_title, mural_name, name, title");
     }
 
+    // Debug: log detected header and indices to help diagnose missing-column issues
+    try {
+      console.info('CSV header columns detected:', header);
+      console.info('Detected column indices', { idxName, idxLat, idxLng, idxAddress, idxSetting, idxBorough, idxYear });
+    } catch (e) {
+      // No-op in case console isn't available in some environments
+    }
     return dataRows
       .map((row, rowIndex) => {
         const val = index => (index >= 0 && index < row.length ? row[index].trim() : "");
