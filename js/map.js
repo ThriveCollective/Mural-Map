@@ -614,6 +614,7 @@ async function geocodeMuralsWithAddresses(murals) {
 
   // Process geocoding in parallel batches to avoid hanging the UI
   // while respecting Google's rate limits.
+  let geocodedCount = 0;
   const geocodePromises = toGeocode.map(async (mural) => {
     const cacheLookupKey = mural.address + GEOCODE_LOCATION_SUFFIX;
     
@@ -621,6 +622,7 @@ async function geocodeMuralsWithAddresses(murals) {
     if (persistentCache[cacheLookupKey]) {
       mural.lat = persistentCache[cacheLookupKey].lat;
       mural.lng = persistentCache[cacheLookupKey].lng;
+      geocodedCount++;
       return;
     }
 
@@ -629,11 +631,10 @@ async function geocodeMuralsWithAddresses(murals) {
         geocoder.geocode({ 
           address: cacheLookupKey, 
           region: 'us',
-          // Bias results to the center of NYC defined in your config
-          locationBias: {
-            lat: DEFAULT_CENTER.lat,
-            lng: DEFAULT_CENTER.lng
-          }
+          bounds: new google.maps.LatLngBounds(
+            { lat: DEFAULT_CENTER.lat - 0.5, lng: DEFAULT_CENTER.lng - 0.5 },
+            { lat: DEFAULT_CENTER.lat + 0.5, lng: DEFAULT_CENTER.lng + 0.5 }
+          )
         }, (results, status) => {
           if (status === "OK") resolve(results);
           else reject(status);
@@ -643,21 +644,18 @@ async function geocodeMuralsWithAddresses(murals) {
       if (response && response[0]) {
         mural.lat = response[0].geometry.location.lat();
         mural.lng = response[0].geometry.location.lng();
-        
-        // Save to cache
         persistentCache[cacheLookupKey] = { lat: mural.lat, lng: mural.lng };
+        geocodedCount++;
       }
     } catch (error) {
-      console.warn(`Geocoding failed for ${mural.name}: ${error}. Status: ${error}`);
+      console.warn(`Geocoding failed for ${mural.name}: ${error}`);
     }
   });
 
   await Promise.all(geocodePromises);
 
-  const cacheSize = Object.keys(persistentCache).length;
-  if (cacheSize > 0) {
+  if (geocodedCount > 0) {
     localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
-    // After geocoding is done, refresh markers to show newly pinpointed locations
     if (typeof applyFilters === 'function') applyFilters();
   }
 }
@@ -703,24 +701,19 @@ async function loadMuralsFromSheet() {
     if (idxName === -1) {
       throw new Error("Could not find name column. Expected one of: mural_title, mural_name, name, title");
     }
-    if (idxLat === -1) {
-      throw new Error("Could not find latitude column. Expected one of: lat, latitude");
-    }
-    if (idxLng === -1) {
-      throw new Error("Could not find longitude column. Expected one of: lng, lon, long, longitude");
-    }
 
     return dataRows
-      .map(row => {
+      .map((row, rowIndex) => {
         const val = index => (index >= 0 && index < row.length ? row[index].trim() : "");
 
-        // Strip any characters that aren't numbers, decimals, or minus signs
-        const latStr = val(idxLat).replace(REGEX_COORDS_CLEAN, '');
-        const lngStr = val(idxLng).replace(REGEX_COORDS_CLEAN, '');
+        // Strip any characters that aren't numbers, decimals, or minus signs.
+        // If the CSV has no lat/lng columns, those values remain empty and are resolved by address geocoding.
+        const latStr = idxLat >= 0 ? val(idxLat).replace(REGEX_COORDS_CLEAN, '') : "";
+        const lngStr = idxLng >= 0 ? val(idxLng).replace(REGEX_COORDS_CLEAN, '') : "";
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
         const nameValue = val(idxName);
-        const uid = `${nameValue}-${lat}-${lng}`;
+        const uid = `${nameValue}-${val(idxAddress)}-${rowIndex}`;
 
         return {
           uid,
@@ -847,10 +840,11 @@ function createMarkers(murals) {
   }
 
   // Regular view: separate tour markers from regular markers
+  const validMurals = murals.filter(m => Number.isFinite(parseFloat(m.lat)) && Number.isFinite(parseFloat(m.lng)));
   const regularMurals = [];
   const tourMurals = [];
 
-  murals.forEach(mural => {
+  validMurals.forEach(mural => {
     const stopNumber = tourStopNumbers.get(mural.uid);
     if (stopNumber !== undefined && isTourActive) {
       tourMurals.push({ mural, stopNumber });
@@ -1528,10 +1522,12 @@ function showMuralPopup(marker) {
     const addressTextEl = document.getElementById(`${popupId}-address-text`);
 
     if (addressTextEl) {
-      if (geocodeCache.has(cacheKey)) {
+      if (m.address) {
+        addressTextEl.textContent = m.address;
+      } else if (geocodeCache.has(cacheKey)) {
         const cached = geocodeCache.get(cacheKey);
         addressTextEl.textContent = cached.formatted;
-       } else if (geocoder) {
+      } else if (geocoder) {
         geocoder.geocode({ location: { lat: m.lat, lng: m.lng } }, (results, status) => {
           let formatted;
           if (status === "OK" && results && results[0]) {
