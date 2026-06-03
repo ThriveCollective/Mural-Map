@@ -96,4 +96,4 @@ Update the array, refresh your browser, and the new tour automatically appears i
 
 - **CORS Error**: Make sure you're running the app from a web server, not by opening the HTML file directly.
 - **CSV Not Loading**: Verify that your Google Sheet is published to the web (File → Share → Publish to web → CSV format) and the URL in `config.js` is correct.
-- **No Markers Showing**: Check that your CSV has columns named `lat`/`latitude` and `lng`/`longitude` with valid coordinates, and a `name`/`mural_name`/`title` column.
+- **No Markers Showing**: Check that your CSV has a column named `street_address` (or `address`) and a `name`/`mural_name`/`title` column.

@@ -62,7 +62,7 @@ document.documentElement.classList.toggle('light-mode', getInitialThemeIsLight()
 let geocoder = null;
 const geocodeCache = new Map(); // key: "lat,lng"  value: resolved address string
 /**
- * Fetches the street address for a given lat/lng.
+ * Fetches the street address for given coordinates.
  * Uses the existing geocodeCache to minimize API calls.
  */
 async function getAddressFromLatLng(lat, lng) {
@@ -115,7 +115,6 @@ const LOCATION_OPTIONS = {
 
 // Regex patterns cached for performance
 const REGEX_IMAGE_SPLIT = /[\n,]+/;
-const REGEX_COORDS_CLEAN = /[^\d.-]/g;
 const REGEX_ARTIST_SPLIT = /,\s*/;
 const REGEX_THEME_SPLIT = /,\s*/;
 
@@ -591,8 +590,7 @@ function getColumnIndex(headerRow, possibleNames) {
 
 /**
  * Resolves locations for murals using the Geocoding API.
- * As requested, it uses the street address primarily to pinpoint locations.
- * If no street address is found, it falls back to the provided lat/lng.
+ * It uses the street address to pinpoint locations.
  */
 async function geocodeMuralsWithAddresses(murals) {
   if (!geocoder) geocoder = new google.maps.Geocoder();
@@ -607,7 +605,7 @@ async function geocodeMuralsWithAddresses(murals) {
   }
   
   // To prevent excessive API usage and slow load times, we primarily geocode 
-  // murals that are missing coordinates but have a street address.
+  // murals based on their street address.
   const toGeocode = murals.filter(m => m.address && (m.lat === null || m.lng === null));
   
   if (toGeocode.length === 0) return;
@@ -682,8 +680,6 @@ async function loadMuralsFromSheet() {
     const dataRows = rows.slice(1);
 
     const idxName = getColumnIndex(header, ["mural_title", "mural_name", "name", "title"]);
-    const idxLat = getColumnIndex(header, ["lat", "latitude"]);
-    const idxLng = getColumnIndex(header, ["lng", "lon", "long", "longitude"]);
     const idxBorough = getColumnIndex(header, ["borough"]);
     const idxYear = getColumnIndex(header, ["year"]);
     const idxSchool = getColumnIndex(header, ["school_name", "school"]);
@@ -705,28 +701,21 @@ async function loadMuralsFromSheet() {
     // Debug: log detected header and indices to help diagnose missing-column issues
     try {
       console.info('CSV header columns detected:', header);
-      console.info('Detected column indices', { idxName, idxLat, idxLng, idxAddress, idxSetting, idxBorough, idxYear });
+      console.info('Detected column indices', { idxName, idxAddress, idxSetting, idxBorough, idxYear });
     } catch (e) {
       // No-op in case console isn't available in some environments
     }
     return dataRows
       .map((row, rowIndex) => {
         const val = index => (index >= 0 && index < row.length ? row[index].trim() : "");
-
-        // Strip any characters that aren't numbers, decimals, or minus signs.
-        // If the CSV has no lat/lng columns, those values remain empty and are resolved by address geocoding.
-        const latStr = idxLat >= 0 ? val(idxLat).replace(REGEX_COORDS_CLEAN, '') : "";
-        const lngStr = idxLng >= 0 ? val(idxLng).replace(REGEX_COORDS_CLEAN, '') : "";
-        const lat = parseFloat(latStr);
-        const lng = parseFloat(lngStr);
         const nameValue = val(idxName);
         const uid = `${nameValue}-${val(idxAddress)}-${rowIndex}`;
 
         return {
           uid,
           name: nameValue,
-          lat: !Number.isNaN(lat) ? lat : null,
-          lng: !Number.isNaN(lng) ? lng : null,
+          lat: null,
+          lng: null,
           borough: val(idxBorough),
           year: val(idxYear),
           school: val(idxSchool),
@@ -743,8 +732,8 @@ async function loadMuralsFromSheet() {
         };
       })
       .filter(m => {
-        // Keep mural if it has a name AND (coordinates OR an address to geocode)
-        return m.name && ( (m.lat !== null && m.lng !== null) || m.address );
+        // Keep mural if it has a name AND an address to geocode
+        return m.name && m.address;
       });
   } catch (err) {
     if (err.message.includes('Failed to fetch') || err.message.includes('CORS') || err.name === 'TypeError') {
