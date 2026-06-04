@@ -682,7 +682,7 @@ async function loadMuralsFromSheet() {
     const idxName = getColumnIndex(header, ["mural_title", "mural_name", "name", "title"]);
     const idxBorough = getColumnIndex(header, ["borough"]);
     const idxYear = getColumnIndex(header, ["year"]);
-    const idxSchool = getColumnIndex(header, ["school_name", "school"]);
+    const idxSchool = getColumnIndex(header, ["site_name", "school_name", "school"]);
     const idxDetailUrl = getColumnIndex(header, ["detail_url", "url", "project_url"]);
     const idxImageUrl = getColumnIndex(header, ["image_url", "image_urls", "thumbnail_url"]);
     const idxArtistNames = getColumnIndex(header, ["artist_names", "artists"]);
