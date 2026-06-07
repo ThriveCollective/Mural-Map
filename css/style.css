@@ -1210,6 +1210,24 @@ html.fullscreen-active .toast {
   -webkit-backdrop-filter: blur(24px) !important;
 }
 
+@media (max-width: 900px) {
+  .gm-style-iw-d,
+  .gm-style-iw-c {
+    width: auto !important;
+    min-width: auto !important;
+    max-width: calc(100vw - 32px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    touch-action: pan-y !important;
+    overflow-x: hidden !important;
+  }
+
+  .gm-style-iw-d > div,
+  .gm-style-iw-c > div {
+    min-width: 0 !important;
+  }
+}
+
 /* ── Directions panel — floats to the right of the sidebar ─────── */
 #directions-panel {
   /* Positioning is set dynamically in JS to match sidebar's exact coordinates */
