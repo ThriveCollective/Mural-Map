@@ -1209,14 +1209,14 @@ function showMuralPopup(marker) {
   }
 
   const html = `
-    <div id="${popupId}" style="width:500px; min-width:500px; max-width:500px; font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px; flex-shrink: 0;">
+    <div id="${popupId}" style="width:min(500px, calc(100vw - 32px)); min-width:0; max-width:calc(100vw - 32px); font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; border-radius: 8px; flex-shrink: 0;">
       <!-- Header with Title and Close Button -->
       <div style="position: relative; margin-bottom: 16px;">
         <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--heading-color); text-align: center; padding-right: 30px;">
           ${m.name}${m.year ? ` (${m.year})` : ''}
         </h2>
         <button id="${popupId}-close" 
-                style="position: absolute; top: 0; right: 0; background: rgba(255,255,255,0.1); border: none; font-size: 24px; cursor: pointer; color: #9ca3af; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; line-height: 1; border-radius: 4px; transition: all 0.2s;"
+                style="position: absolute; top: 0; right: 0; background: rgba(255,255,255,0.1); border: none; font-size: 26px; cursor: pointer; color: #9ca3af; padding: 0; width: 36px; height: 36px; min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; line-height: 1; border-radius: 6px; transition: all 0.2s; touch-action: manipulation;"
                 onmouseover="this.style.background='rgba(255,255,255,0.2)'; this.style.color='#ffffff';"
                 onmouseout="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#9ca3af';"
                 title="Close">
@@ -1382,20 +1382,28 @@ function showMuralPopup(marker) {
     const iwContainer = document.querySelector('.gm-style-iw-c');
     
     if (iwOuter) {
+      const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
       iwOuter.style.background = 'var(--panel-bg)';
       iwOuter.style.color = 'var(--text-main)';
-      iwOuter.style.width = 'var(--iw-width, 500px)';
+      iwOuter.style.width = isMobilePopup ? 'calc(100vw - 32px)' : 'var(--iw-width, 500px)';
+      iwOuter.style.maxWidth = isMobilePopup ? 'calc(100vw - 32px)' : '500px';
+      iwOuter.style.left = isMobilePopup ? '50%' : '';
+      iwOuter.style.transform = isMobilePopup ? 'translateX(-50%)' : '';
       iwOuter.style.display = 'block';
+      iwOuter.style.touchAction = 'pan-y';
       // Lock height context
       iwOuter.style.overflowY = 'auto';
       iwOuter.style.maxHeight = 'none';
     }
     
     if (iwContainer) {
+      const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
       iwContainer.style.background = 'var(--panel-bg)';
-      iwContainer.style.width = 'var(--iw-width, 500px)';
+      iwContainer.style.width = isMobilePopup ? 'calc(100vw - 32px)' : 'var(--iw-width, 500px)';
+      iwContainer.style.maxWidth = isMobilePopup ? 'calc(100vw - 32px)' : '500px';
       iwContainer.style.overflow = 'hidden';
       iwContainer.style.maxHeight = 'none';
+      iwContainer.style.touchAction = 'pan-y';
     }
     
     // Hide Google Maps' default close button since we have our own
@@ -2630,17 +2638,9 @@ async function initMap() {
     const transitLayer = new google.maps.TransitLayer();
     transitLayer.setMap(map);
     
-    infoWindow = new google.maps.InfoWindow({ maxWidth: 500 });
+    const infoWindowMaxWidth = isPhoneViewport ? Math.max(280, window.innerWidth - 32) : 500;
+    infoWindow = new google.maps.InfoWindow({ maxWidth: infoWindowMaxWidth });
     geocoder = new google.maps.Geocoder();
-
-    let murals = await loadMuralsFromSheet();
-    if (murals.length === 0) {
-      throw new Error("No murals found in CSV.");
-    }
-    
-    allMurals = murals;
-    buildCuratedTours();
-    renderRecents();
     renderSavedMurals();
     renderFeaturedMurals();
 
