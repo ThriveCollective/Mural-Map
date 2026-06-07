@@ -1245,7 +1245,7 @@ function showMuralPopup(marker) {
 
       <!-- Image Carousel -->
       ${images.length > 0 ? `
-        <div style="position: relative; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #f3f4f6;">
+        <div class="popup-image-card" style="position: relative; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #f3f4f6;">
           <div style="position: relative; width: 100%; padding-top: 56.25%; background: #e5e7eb;">
             <img id="${popupId}-img" src="${images[0]}" alt="${m.name}" 
                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">
@@ -1282,7 +1282,7 @@ function showMuralPopup(marker) {
       ` : ''}
       
       <!-- Metadata Fields in 2 Columns -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+      <div class="popup-meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
         <!-- Left Column -->
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div>
@@ -1339,7 +1339,7 @@ function showMuralPopup(marker) {
       <!-- Street View Panel Container -->
       <div id="${popupId}-streetview-panel" style="display:none; width:100%; height:250px; border-radius:8px; margin-bottom:16px; overflow:hidden; background:#000;"></div>
 
-      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
+      <div class="popup-action-row" style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px;">
         <button id="${popupId}-save"
           style="flex:1; border:1px solid ${isSavedInitial ? '#ef4444' : 'var(--panel-border)'}; border-radius:999px; background:${isSavedInitial ? 'rgba(239, 68, 68, 0.1)' : 'transparent'}; color:${isSavedInitial ? '#ef4444' : 'var(--text-main)'}; font-weight:600; padding:10px 18px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-family:system-ui,sans-serif;">
           <span style="font-size: 16px;">${isSavedInitial ? '❤️' : '🤍'}</span>
@@ -1364,6 +1364,9 @@ function showMuralPopup(marker) {
           Portfolio ↗
         </a>` : ''}
       </div>
+      <button id="${popupId}-close-bottom" style="width:100%; border:none; border-radius:999px; background: rgba(255,255,255,0.08); color: var(--text-main); font-weight:700; padding:14px 18px; cursor:pointer; font-size:14px; margin-top: 12px; text-transform:uppercase; letter-spacing:0.8px; touch-action: manipulation;">
+        Back to Map
+      </button>
     </div>
   `;
 
@@ -1418,11 +1421,46 @@ function showMuralPopup(marker) {
       el.style.overflow = 'visible';
       el.style.maxHeight = 'none';
     });
+
+    const isNarrowPhone = window.matchMedia('(max-width: 420px)').matches;
+    if (isNarrowPhone) {
+      const popup = document.getElementById(popupId);
+      if (popup) {
+        popup.style.padding = '14px 12px';
+        popup.style.width = 'calc(100vw - 20px)';
+        popup.style.maxWidth = 'calc(100vw - 20px)';
+      }
+      const metaGrid = popup?.querySelector('.popup-meta-grid');
+      if (metaGrid) {
+        metaGrid.style.gridTemplateColumns = '1fr';
+        metaGrid.style.gap = '10px';
+      }
+      const actionRow = popup?.querySelector('.popup-action-row');
+      if (actionRow) {
+        actionRow.style.flexDirection = 'column';
+        actionRow.style.gap = '10px';
+      }
+      const buttons = popup?.querySelectorAll('button, a');
+      buttons?.forEach(el => {
+        el.style.minHeight = '42px';
+        el.style.fontSize = '13px';
+      });
+    }
     
     // Set up our custom close button
     const customCloseBtn = document.getElementById(`${popupId}-close`);
     if (customCloseBtn) {
       customCloseBtn.addEventListener('click', () => {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+        infoWindow.close();
+      });
+    }
+
+    const customCloseBottomBtn = document.getElementById(`${popupId}-close-bottom`);
+    if (customCloseBottomBtn) {
+      customCloseBottomBtn.addEventListener('click', () => {
         if (window.speechSynthesis) {
           window.speechSynthesis.cancel();
         }
