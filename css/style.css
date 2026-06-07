@@ -1048,6 +1048,9 @@ html.fullscreen-active .toast {
     left: 10px;
     right: 10px;
     max-height: calc(100vh - 32px);
+    padding: 18px 16px 22px;
+    border-radius: 18px;
+    backdrop-filter: blur(20px);
   }
   
   #sidebar.hidden {
@@ -1061,11 +1064,121 @@ html.fullscreen-active .toast {
     right: 8px;
   }
 
+  #sidebar .sidebar-hide-btn {
+    top: 18px;
+    right: 18px;
+    left: auto;
+    width: 42px;
+    height: 42px;
+    font-size: 22px;
+  }
+
+  #sidebarShowTab {
+    top: auto;
+    bottom: 18px;
+    left: 12px;
+    width: 52px;
+    height: 72px;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+  }
+
+  .location-actions {
+    flex-direction: column;
+  }
+
+  .location-actions .primary-btn,
+  .location-actions .ghost-btn,
+  .custom-tour-header-btn,
+  .theme-toggle,
+  .view-all-btn,
+  .primary-btn,
+  .ghost-btn {
+    min-height: 46px;
+    font-size: 13px;
+  }
+
+  .filter-select,
+  .address-input,
+  #searchInput {
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .filter-group {
+    gap: 10px;
+  }
+
+  .nearest-card,
+  .recent-card,
+  .tour-card,
+  .modal-content,
+  .modal-body {
+    min-width: 0;
+  }
+
   #map-loading,
   #map-error {
     top: 12px;
     width: calc(100% - 32px);
     max-width: 260px;
+  }
+}
+
+@media (max-width: 900px) {
+  #sidebar {
+    max-height: calc(100vh - 18px);
+    width: calc(100% - 24px);
+    left: 12px;
+    right: 12px;
+  }
+
+  #sidebar .sidebar-hide-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .sidebar-show-tab {
+    bottom: 18px;
+    top: auto;
+    left: 12px;
+    width: 50px;
+    height: 68px;
+  }
+
+  .custom-tour-header-btn {
+    padding: 14px 14px;
+  }
+
+  .filter-select,
+  .address-input,
+  #searchInput {
+    font-size: 14px;
+  }
+}
+
+/* Mobile & tablet friendly interactions */
+@media (max-width: 1024px) {
+  #sidebar {
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.25);
+    border-radius: 20px;
+  }
+
+  .sidebar-hide-btn,
+  .sidebar-show-tab,
+  .theme-toggle,
+  .primary-btn,
+  .ghost-btn,
+  .custom-tour-header-btn {
+    touch-action: manipulation;
+  }
+
+  #sidebar {
+    max-height: calc(100vh - 16px);
+  }
+
+  #map {
+    min-height: 100vh;
   }
 }
 
