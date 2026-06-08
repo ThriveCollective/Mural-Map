@@ -2610,6 +2610,10 @@ async function initMap() {
     showError(false);
     showLoading(true);
 
+    // Load mural data before rendering the map and UI panels.
+    const murals = await loadMuralsFromSheet();
+    allMurals = murals;
+
     // Handle the 'Clear Location' button in the sidebar
     const clearBtn = document.getElementById('clearLocationBtn');
     if (clearBtn) {
@@ -2683,8 +2687,8 @@ async function initMap() {
     renderFeaturedMurals();
 
     // Render what we have first, then geocode in the background
-    currentVisibleMurals = murals;
-    createMarkers(murals);
+    currentVisibleMurals = allMurals;
+    createMarkers(allMurals);
     populateFilters();
     setupManualLocationSearch();
     setupSearch();
@@ -2694,7 +2698,7 @@ async function initMap() {
     showLoading(false);
 
     // background geocoding (non-blocking)
-    geocodeMuralsWithAddresses(murals);
+    geocodeMuralsWithAddresses(allMurals);
 
     // Setup Districts Layer
     districtLabels = [];
