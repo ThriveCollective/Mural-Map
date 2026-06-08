@@ -1877,10 +1877,11 @@ function createCustomTourNearMe() {
     if (toggleIcon) toggleIcon.textContent = "−";
   }
   renderTourItinerary();
+  updateTourPolyline();
 
   // Automatically trigger directions for the new custom tour
-  if (customTour.stops && customTour.stops.length > 0) {
-    window.calculateTourDirections(customTour.stops, customTour.name);
+  if (activeTourOrderedStops && activeTourOrderedStops.length > 1) {
+    window.calculateTourDirections(activeTourOrderedStops, activeTourDefinition.name);
   }
 
   const container = document.getElementById("tourCards");
@@ -2894,6 +2895,9 @@ window.calculateTourDirections = function(stops, tourName) {
 
   const results = {};
   let completed = 0;
+  let anyRouteOk = false;
+
+  updateTourPolyline();
 
   modes.forEach(mode => {
     const req = {
@@ -2913,12 +2917,17 @@ window.calculateTourDirections = function(stops, tourName) {
     directionsService.route(req, (response, status) => {
       completed++;
       if (status === 'OK') {
+        anyRouteOk = true;
         results[mode.key] = { response, mode };
         _updateModeTab(mode.key, response, mode);
       } else {
         _updateModeTab(mode.key, null, mode);
       }
       if (completed === modes.length) {
+        if (!anyRouteOk) {
+          // If no route results were returned, keep the tour polyline visible as a fallback.
+          showToast('No multi-stop route available; showing direct tour path instead.');
+        }
         activeModeTab = 'TRANSIT';
         _drawMode(results, activeModeTab, origin, destination);
         _showRouteList(results, activeModeTab, origin, destination);
