@@ -290,7 +290,7 @@ function renderTourCards() {
 
   container.innerHTML = "";
 
-  // ── Sync the "Custom Local Tour" Button State at the top ──
+  // ── Update the "Custom Local Tour" Button State ──
   const customTourId = `${CURATED_TOUR_PREFIX}custom-near-me`;
   const isCustomActive = activeFilters.tour === customTourId;
   const topBtn = document.getElementById("createCustomTourBtn");
@@ -300,17 +300,7 @@ function renderTourCards() {
       ? '<span>🛑</span> End Custom Tour' 
       : '<span>✨</span> Create Local Tour';
     topBtn.classList.toggle('active', isCustomActive);
-    
-    topBtn.onclick = () => {
-      if (isCustomActive) { 
-        activeFilters.tour = null; 
-        activeTourDefinition = null; 
-        applyFilters(); 
-        renderTourCards(); 
-      } else { 
-        createCustomTourNearMe(); 
-      }
-    };
+    // Note: click handler is set up by setupCreateCustomTourButton() on page load
   }
 
   if (!curatedTours.length) {
@@ -4048,16 +4038,36 @@ function setupSearchFiltersToggle() {
 /** NEW: Toggles the visibility of the curated tours section. */
 function setupCreateCustomTourButton() {
   const topBtn = document.getElementById("createCustomTourBtn");
-  if (!topBtn) return;
+  if (!topBtn) {
+    console.warn("createCustomTourBtn element not found");
+    return;
+  }
 
-  // Set up the button click handler - this ensures it works even if renderTourCards hasn't been called yet
-  topBtn.addEventListener("click", (e) => {
+  console.log("Setting up createCustomTourBtn handler");
+
+  // Remove any existing listeners to avoid duplicates
+  topBtn.replaceWith(topBtn.cloneNode(true));
+  const freshBtn = document.getElementById("createCustomTourBtn");
+  
+  if (!freshBtn) return;
+
+  freshBtn.addEventListener("click", (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    console.log("Create Local Tour button clicked, userLocation:", userLocation);
+    
+    if (!userLocation) {
+      alert("Please set your location first using the search bar or GPS button.");
+      return;
+    }
+
     const customTourId = `${CURATED_TOUR_PREFIX}custom-near-me`;
     const isCustomActive = activeFilters.tour === customTourId;
 
     if (isCustomActive) {
       // End tour
+      console.log("Ending custom tour");
       activeFilters.tour = null;
       activeTourDefinition = null;
       activeTourCursor = 0;
@@ -4072,6 +4082,7 @@ function setupCreateCustomTourButton() {
       renderTourCards();
     } else {
       // Create custom tour
+      console.log("Creating custom tour");
       createCustomTourNearMe();
     }
   });
