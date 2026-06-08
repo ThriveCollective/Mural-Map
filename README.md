@@ -6,7 +6,11 @@ A prototype map application that displays murals from a Google Sheet using the G
 
 1. **Configure the CSV URL**: Edit `js/config.js` and update the `CSV_URL` to point to your published Google Sheet (File → Share → Publish to web → CSV format).
 
-2. **Add your Google Maps API Key**: Edit `index.html` and replace `YOUR_GOOGLE_MAPS_API_KEY` with your actual API key (or update the existing key if needed).
+2. **Create a local secret config**:
+   - Copy `secretconfig.example.js` to `secretconfig.js`.
+   - Replace `YOUR_GOOGLE_MAPS_API_KEY_HERE` with your actual Google Maps API key.
+
+3. **Vercel deployment**: Set `GOOGLE_MAPS_API_KEY` as an environment variable in your Vercel project settings. The build script will generate `secretconfig.js` automatically.
 
 ## Running the Application
 

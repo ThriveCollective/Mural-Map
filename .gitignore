@@ -1,0 +1,8 @@
+# Ignore generated secret configuration
+secretconfig.js
+
+# Node artifacts
+node_modules/
+npm-debug.log*
+package-lock.json
+.yarn/*

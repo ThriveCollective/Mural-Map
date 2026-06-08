@@ -204,13 +204,27 @@
     </div>
 
     <!-- Config (CSV URL, defaults, etc.) -->
+    <script src="secretconfig.js"></script>
     <script src="js/config.js"></script>
     <!-- MarkerClusterer library for clustering -->
     <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
     <!-- Map logic -->
     <script src="js/map.js"></script>
 
-    <!-- Google Maps JavaScript API (Added 'marker' library) -->
-    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDf_8CxcMnNxWSpk-vUU5wC0Qog4SUVeM&libraries=places,marker&callback=initMap&loading=async"></script>
-</body>
+    <!-- Load Google Maps JavaScript API from a secret config file -->
+    <script>
+      (function() {
+        const apiKey = window.MURAL_MAP_SECRETS?.GOOGLE_MAPS_API_KEY;
+        if (!apiKey) {
+          console.error('Missing Google Maps API key. Create secretconfig.js or set GOOGLE_MAPS_API_KEY in Vercel.');
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker&callback=initMap`;
+        document.head.appendChild(script);
+      })();
+    </script>
+  </body>
 </html>

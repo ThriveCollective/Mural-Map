@@ -1,0 +1,7 @@
+{
+  "name": "mural-map",
+  "private": true,
+  "scripts": {
+    "build": "node ./scripts/generate-secretconfig.js"
+  }
+}
