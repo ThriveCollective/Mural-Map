@@ -4046,6 +4046,37 @@ function setupSearchFiltersToggle() {
 }
 
 /** NEW: Toggles the visibility of the curated tours section. */
+function setupCreateCustomTourButton() {
+  const topBtn = document.getElementById("createCustomTourBtn");
+  if (!topBtn) return;
+
+  // Set up the button click handler - this ensures it works even if renderTourCards hasn't been called yet
+  topBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    const customTourId = `${CURATED_TOUR_PREFIX}custom-near-me`;
+    const isCustomActive = activeFilters.tour === customTourId;
+
+    if (isCustomActive) {
+      // End tour
+      activeFilters.tour = null;
+      activeTourDefinition = null;
+      activeTourCursor = 0;
+      activeTourOrderedStops = [];
+      if (activeTourPolyline) {
+        activeTourPolyline.setMap(null);
+        activeTourPolyline = null;
+      }
+      tourMarkers.forEach(m => m.setMap(null));
+      tourMarkers = [];
+      applyFilters();
+      renderTourCards();
+    } else {
+      // Create custom tour
+      createCustomTourNearMe();
+    }
+  });
+}
+
 function setupCuratedToursToggle() {
   const toggleBtn = document.getElementById("toggleCuratedToursBtn");
   const toursContainer = document.getElementById("curatedToursContainer");
@@ -4078,6 +4109,7 @@ window.initMap = initMap;
     if (typeof setupMapControlsToggle === 'function') setupMapControlsToggle();
     if (typeof setupSearchFiltersToggle === 'function') setupSearchFiltersToggle(); // Existing toggle
     if (typeof setupCuratedToursToggle === 'function') setupCuratedToursToggle();   // New toggle
+    if (typeof setupCreateCustomTourButton === 'function') setupCreateCustomTourButton(); // Tour creation button
     
     // Initialize range sliders immediately so fills are rendered on load
     if (typeof setupMuralView === 'function') setupMuralView();
