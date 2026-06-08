@@ -2645,7 +2645,8 @@ async function initMap() {
     showLoading(false);
 
     // background geocoding (non-blocking)
-    geocodeMuralsWithAddresses(murals);
+    const muralsToGeocode = currentVisibleMurals.length ? currentVisibleMurals : allMurals;
+    geocodeMuralsWithAddresses(muralsToGeocode);
 
     // Setup Districts Layer
     districtLabels = [];
