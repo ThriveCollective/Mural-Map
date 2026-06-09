@@ -1,103 +1,151 @@
 # Thrive Mural Map
 
-A prototype map application that displays murals from a Google Sheet using the Google Maps JavaScript API.
+An interactive mural discovery app built for Thrive projects. It displays mural data from a CSV source on a Google Map, supports search and filters, curated tours, saved favorites, nearby mural lookup, and dynamic info windows.
+
+## Project overview
+
+This repository includes a static web app that:
+
+- loads mural records from a published Google Sheet or other CSV source,
+- geocodes mural addresses when needed,
+- displays clustered markers on Google Maps,
+- supports filtering by borough, school, year, setting, and tour,
+- provides curated tours and nearby mural directions,
+- renders featured murals and saved mural cards in the sidebar.
+
+## Files and structure
+
+- `index.html` — main page and app shell.
+- `css/style.css` — styling for the map, sidebar, and responsive UI.
+- `js/config.js` — configuration values and curated tour definitions.
+- `js/map.js` — main application logic, map initialization, data loading, filtering, and UI behavior.
+- `server.py` / `server.bat` — lightweight local server wrappers for development.
+- `City_Council_Districts.geojson` — optional district boundaries rendered on the map.
+- `data/` — additional data files and sample CSV content.
 
 ## Setup
 
-1. **Configure the CSV URL**: Edit `js/config.js` and update the `CSV_URL` to point to your published Google Sheet (File → Share → Publish to web → CSV format).
+### 1. Configure the CSV source
 
-2. **Create a local secret config**:
-   - Copy `secretconfig.example.js` to `secretconfig.js`.
-   - Replace `YOUR_GOOGLE_MAPS_API_KEY_HERE` with your actual Google Maps API key.
+Edit `js/config.js` and set `CSV_URL` to the published CSV link for your source data.
 
-3. **Vercel deployment**: Set `GOOGLE_MAPS_API_KEY` as an environment variable in your Vercel project settings. The build script will generate `secretconfig.js` automatically.
+The app expects a CSV with at least the following fields:
 
-## Running the Application
+- `name`, `mural_name`, `mural_title`, or `title`
+- `address` or `street_address`
 
-**Important**: You cannot open `index.html` directly in a browser (using `file://` protocol) because browsers block fetch requests to external URLs due to CORS restrictions.
+Optional fields include:
 
-### Option 1: Python HTTP Server (Recommended)
+- `borough`
+- `year`
+- `school_name`, `site_name`, or `school`
+- `theme` or `tags`
+- `tour_id` or `tour`
+- `location`, `setting`, `interior_exterior`, or `placement`
+- `image_url`, `image_urls`, or `thumbnail_url`
 
-If you have Python installed:
+> Tip: The CSV parser is flexible about column names, but the `name/title` and `address/street_address` columns are required.
+
+### 2. Add your Google Maps API key
+
+Copy `secretconfig.example.js` to `secretconfig.js` and replace `YOUR_GOOGLE_MAPS_API_KEY_HERE` with your actual key.
+
+`secretconfig.js` is ignored by Git so your key is not committed.
+
+### 3. Run locally
+
+You must serve the app over HTTP because the browser blocks fetch requests from `file://`.
+
+#### Recommended: Python HTTP server
 
 **Windows:**
-- Double-click `server.bat`, OR
-- Open Command Prompt and run: `python server.py`
+- Double-click `server.bat`, or
+- run `python server.py`
 
-**Mac/Linux:**
+**macOS/Linux:**
 ```bash
 python3 server.py
 # or
 python server.py
 ```
 
-Then open http://localhost:8000 in your browser.
+Open `http://localhost:8000` in your browser.
 
-### Option 2: Python's Built-in Server
+#### Alternative: Python built-in server
 
 ```bash
-# Python 3
 python -m http.server 8000
-
-# Python 2
-python -m SimpleHTTPServer 8000
 ```
 
-Then open http://localhost:8000 in your browser.
+Then open `http://localhost:8000`.
 
-### Option 3: Node.js http-server
-
-If you have Node.js installed:
+#### Alternative: Node.js http-server
 
 ```bash
 npx http-server -p 8000
 ```
 
-Then open http://localhost:8000 in your browser.
+#### Alternative: VS Code Live Server
 
-### Option 4: VS Code Live Server
+Install the Live Server extension and click **Go Live**.
 
-If you're using VS Code, install the "Live Server" extension and click "Go Live" in the status bar.
+## Configuration
+
+### `js/config.js`
+
+This file sets the CSV URL, default map center and zoom, and curated tours.
+
+Example settings:
+
+```js
+window.MURAL_MAP_CONFIG = {
+  CSV_URL: "https://docs.google.com/spreadsheets/d/.../export?format=csv",
+  DEFAULT_CENTER: { lat: 40.7128, lng: -74.0060 },
+  DEFAULT_ZOOM: 11,
+  MAP_ID: "YOUR_MAP_ID"
+};
+```
+
+### Curated tours
+
+Add or update curated tours in `window.MURAL_TOURS` inside `js/config.js`.
+
+Each tour can include:
+
+- `id` — unique identifier
+- `name` — display title
+- `description` — tour text
+- `borough` — optional borough filter
+- `keywords` — mural matching keywords
+- `limit` — max number of stops
+- `color` — marker/tour color
 
 ## Features
 
-- Floating, glassmorphic sidebar that keeps filters visible on desktop and slides in on mobile via the floating toggle.
-- **Featured Murals**: A rotating showcase of random murals every time the app loads, with a "Refresh" button to instantly discover new art, helping users find inspiration.
-- "Find murals near me" workflow that leverages browser geolocation to surface the nearest murals, quick centering, and one-tap Google Maps directions.
-- Curated tour cards plus tour filters that combine staff-created routes with any `tour_id` values that already exist in your dataset.
-- Redesigned info windows with distance callouts, quick actions, and support for mobile layouts.
+- Responsive map and sidebar layout
+- Search and filter murals by name, borough, school, year, setting, and tour
+- Marker clustering for dense mural collections
+- Featured murals panel with “Surprise Me” and refresh support
+- Saved murals list persisted in local storage
+- Nearest mural lookup and transit directions
+- City council district overlay with toggle
+- Background geocoding for murals with addresses
 
-## Adding or Editing Curated Tours
+## Deployment
 
-Curated tours live in `js/config.js` under the `window.MURAL_TOURS` array. Each object accepts:
+For static hosting, deploy the contents of this repository and configure the Google Maps API key in the host environment.
 
-- `id`: short slug (e.g., `harlem`).
-- `name` / `description`: text shown in the UI.
-- `borough`: optional borough keyword used when auto-selecting stops.
-- `keywords`: optional array of keywords matched against mural names, schools, boroughs, and themes.
-- `limit`: maximum number of stops to include (defaults to all matches).
-- `color`: optional hex value used for tour chips and polylines.
-
-Example:
-
-```js
-window.MURAL_TOURS = [
-  {
-    id: "harlem",
-    name: "Harlem Highlights",
-    description: "Community murals in Harlem and upper Manhattan.",
-    borough: "Manhattan",
-    keywords: ["harlem", "academy"],
-    color: "#f472b6",
-    limit: 6
-  }
-];
-```
-
-Update the array, refresh your browser, and the new tour automatically appears in the curated cards, the tour filter chips, and the tour "View all" modal.
+If using Vercel, set a `GOOGLE_MAPS_API_KEY` environment variable and let the build script generate `secretconfig.js` as required.
 
 ## Troubleshooting
 
-- **CORS Error**: Make sure you're running the app from a web server, not by opening the HTML file directly.
-- **CSV Not Loading**: Verify that your Google Sheet is published to the web (File → Share → Publish to web → CSV format) and the URL in `config.js` is correct.
-- **No Markers Showing**: Check that your CSV has a column named `street_address` (or `address`) and a `name`/`mural_name`/`title` column.
+- **App won’t load**: Confirm you are using `http://localhost:8000`, not `file://`.
+- **CSV fetch fails**: Ensure your Google Sheet is published to the web as CSV and the URL is valid.
+- **No map markers**: Verify the CSV includes required columns and that the data is properly encoded.
+- **Google Maps errors**: Check the API key, billing status, and referer restrictions.
+
+## Notes
+
+- `secretconfig.js` should remain local and should not be checked into source control.
+- The app uses `js/map.js` as the main controller for data loading, filtering, marker creation, and UI behavior.
+- The dataset is loaded on page initialization, then geocoded in the background if needed.
