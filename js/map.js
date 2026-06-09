@@ -1372,9 +1372,12 @@ function showMuralPopup(markerOrMural) {
     </div>
   `;
 
+  const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
   infoWindow.setContent(html);
   
-  if (anchor && anchor.map) {
+  if (isMobilePopup) {
+    openMobileMuralPopup(html);
+  } else if (anchor && anchor.map) {
     infoWindow.open({ anchor: anchor, map: map });
   } else if (m.lat && m.lng) {
     infoWindow.setPosition({ lat: parseFloat(m.lat), lng: parseFloat(m.lng) });
@@ -1465,7 +1468,6 @@ function showMuralPopup(markerOrMural) {
         el.style.minHeight = '40px';
         el.style.fontSize = '12px';
       });
-      });
     }
     
     // Set up our custom close button
@@ -1476,6 +1478,7 @@ function showMuralPopup(markerOrMural) {
           window.speechSynthesis.cancel();
         }
         infoWindow.close();
+        closeMobileMuralPopup();
       });
     }
 
@@ -1486,6 +1489,7 @@ function showMuralPopup(markerOrMural) {
           window.speechSynthesis.cancel();
         }
         infoWindow.close();
+        closeMobileMuralPopup();
       });
     }
 
@@ -2548,7 +2552,7 @@ function focusOnMuralByUid(uid) {
     map.setZoom(15);
   }
 
-  // Use a small delay to allow map to settle and markers to uncluster
+  // Use a delay to allow map to settle and markers to uncluster
   setTimeout(() => {
     if (marker && marker.map) {
       google.maps.event.trigger(marker, "gmp-click");
@@ -2556,7 +2560,7 @@ function focusOnMuralByUid(uid) {
       // Fallback: If marker is missing or clustered, open popup at position
       showMuralPopup(marker || mural);
     }
-  }, 300);
+  }, 400);
 }
 window.focusOnMuralByUid = focusOnMuralByUid;
 
