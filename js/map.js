@@ -747,10 +747,13 @@ function createMarkerElement(type = 'marker-dot', color, label) {
 
   const el = document.createElement('div');
   el.className = type;
-  el.style.touchAction = 'manipulation';
+  el.style.touchAction = 'none';
   el.style.pointerEvents = 'auto';
   el.style.webkitTapHighlightColor = 'transparent';
   el.style.cursor = 'pointer';
+  el.style.userSelect = 'none';
+  el.style.webkitUserSelect = 'none';
+  el.style.msUserSelect = 'none';
   if (color) {
     el.style.setProperty('--marker-color', color);
   }
@@ -767,7 +770,16 @@ function createMarkerElement(type = 'marker-dot', color, label) {
 
 function bindMarkerTouchHandler(marker, content) {
   if (!content || !content.addEventListener) return;
-  const openPopup = () => showMuralPopup(marker);
+  let triggered = false;
+  const openPopup = () => {
+    if (triggered) return;
+    triggered = true;
+    showMuralPopup(marker);
+    setTimeout(() => {
+      triggered = false;
+    }, 0);
+  };
+
   const preventAndOpen = (event) => {
     if (event.cancelable) {
       event.preventDefault();
@@ -776,7 +788,9 @@ function bindMarkerTouchHandler(marker, content) {
     openPopup();
   };
 
+  content.addEventListener('touchstart', preventAndOpen, { passive: false });
   content.addEventListener('touchend', preventAndOpen, { passive: false });
+  content.addEventListener('pointerdown', preventAndOpen, { passive: false });
   content.addEventListener('pointerup', preventAndOpen, { passive: false });
 }
 
@@ -836,9 +850,6 @@ function createMarkers(murals) {
         marker.mural = mural;
 
         marker.addListener("gmp-click", () => {
-          showMuralPopup(marker);
-        });
-        marker.addListener("click", () => {
           showMuralPopup(marker);
         });
         bindMarkerTouchHandler(marker, markerContent);
@@ -902,9 +913,6 @@ function createMarkers(murals) {
    marker.addListener("gmp-click", () => {
      showMuralPopup(marker);
    });
-   marker.addListener("click", () => {
-     showMuralPopup(marker);
-   });
    bindMarkerTouchHandler(marker, markerContent);
 
    markers.push(marker);
@@ -924,9 +932,6 @@ function createMarkers(murals) {
     marker.mural = mural;
 
     marker.addListener("gmp-click", () => {
-      showMuralPopup(marker);
-    });
-    marker.addListener("click", () => {
       showMuralPopup(marker);
     });
     bindMarkerTouchHandler(marker, markerContent);
