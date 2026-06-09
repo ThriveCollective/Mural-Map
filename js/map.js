@@ -747,6 +747,10 @@ function createMarkerElement(type = 'marker-dot', color, label) {
 
   const el = document.createElement('div');
   el.className = type;
+  el.style.touchAction = 'manipulation';
+  el.style.pointerEvents = 'auto';
+  el.style.webkitTapHighlightColor = 'transparent';
+  el.style.cursor = 'pointer';
   if (color) {
     el.style.setProperty('--marker-color', color);
   }
@@ -759,6 +763,21 @@ function createMarkerElement(type = 'marker-dot', color, label) {
   }
 
   return el;
+}
+
+function bindMarkerTouchHandler(marker, content) {
+  if (!content || !content.addEventListener) return;
+  const openPopup = () => showMuralPopup(marker);
+  const preventAndOpen = (event) => {
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+    openPopup();
+  };
+
+  content.addEventListener('touchend', preventAndOpen, { passive: false });
+  content.addEventListener('pointerup', preventAndOpen, { passive: false });
 }
 
 /**
@@ -805,11 +824,12 @@ function createMarkers(murals) {
     murals.forEach(mural => {
       const stopNumber = tourStopNumbers.get(mural.uid);
       if (stopNumber !== undefined) {
+        const markerContent = createNumberedMarkerContent(stopNumber, tourColor);
         const marker = new google.maps.marker.AdvancedMarkerElement({
           position: { lat: mural.lat, lng: mural.lng },
           map: map,
           title: mural.name,
-          content: createNumberedMarkerContent(stopNumber, tourColor),
+          content: markerContent,
           zIndex: 1000
         });
 
@@ -818,6 +838,10 @@ function createMarkers(murals) {
         marker.addListener("gmp-click", () => {
           showMuralPopup(marker);
         });
+        marker.addListener("click", () => {
+          showMuralPopup(marker);
+        });
+        bindMarkerTouchHandler(marker, markerContent);
         tourMarkers.push(marker);
       }
     });
@@ -866,28 +890,34 @@ function createMarkers(murals) {
      collision.instance++;
    }
 
+   const markerContent = createMarkerElement('marker-dot');
    const marker = new google.maps.marker.AdvancedMarkerElement({
      position: { lat: lat, lng: lng }, // Use the updated lat/lng with jitter
      map: null,
      title: mural.name,
-     content: createMarkerElement('marker-dot')
+     content: markerContent
    });
 
    marker.mural = mural;
    marker.addListener("gmp-click", () => {
      showMuralPopup(marker);
    });
+   marker.addListener("click", () => {
+     showMuralPopup(marker);
+   });
+   bindMarkerTouchHandler(marker, markerContent);
 
    markers.push(marker);
  });
 
   // Create numbered tour markers (added directly to map, not clustered)
   tourMurals.forEach(({ mural, stopNumber }) => {
+    const markerContent = createNumberedMarkerContent(stopNumber, tourColor);
     const marker = new google.maps.marker.AdvancedMarkerElement({
       position: { lat: mural.lat, lng: mural.lng },
       map: map,
       title: mural.name,
-      content: createNumberedMarkerContent(stopNumber, tourColor),
+      content: markerContent,
       zIndex: 1000
     });
 
@@ -896,6 +926,10 @@ function createMarkers(murals) {
     marker.addListener("gmp-click", () => {
       showMuralPopup(marker);
     });
+    marker.addListener("click", () => {
+      showMuralPopup(marker);
+    });
+    bindMarkerTouchHandler(marker, markerContent);
 
     tourMarkers.push(marker);
   });
