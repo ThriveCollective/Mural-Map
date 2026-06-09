@@ -1170,36 +1170,6 @@ html.fullscreen-active .toast {
   #searchInput {
     font-size: 14px;
   }
-
-  .marker-dot,
-  .marker-number,
-  .marker-cluster,
-  .marker-highlight {
-    touch-action: manipulation;
-    cursor: pointer;
-  }
-
-  .marker-dot {
-    width: 32px;
-    height: 32px;
-  }
-
-  .marker-dot::after {
-    width: 8px;
-    height: 8px;
-  }
-
-  .marker-number,
-  .marker-cluster {
-    width: 44px;
-    height: 44px;
-    font-size: 16px;
-  }
-
-  .marker-highlight {
-    width: 50px;
-    height: 50px;
-  }
 }
 
 /* Mobile & tablet friendly interactions */
