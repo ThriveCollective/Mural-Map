@@ -259,6 +259,7 @@ html.fullscreen-active .toast {
 #map-container {
   position: absolute;
   inset: 0;
+  z-index: 1; /* Establish a stacking context for correct element layering */
   border: 2px solid var(--brand-blue);
   background: #0f172a;
 }
@@ -1149,6 +1150,7 @@ html.fullscreen-active .toast {
 
   #map-loading,
   #map-error {
+    z-index: 10001; /* Ensure loading/error states are visible over mobile modals */
     top: 12px;
     width: calc(100% - 32px);
     max-width: 260px;
@@ -1707,7 +1709,7 @@ body:not(.light-mode) .moon-icon { display: none; }
   right: 0;
   bottom: 0;
   background: var(--modal-overlay);
-  z-index: 9999; /* Below the modal, above map */
+  z-index: 5; /* Lowered to allow map elements like loading bars to stack above */
   opacity: 0;
   transition: opacity 0.3s ease-out;
   pointer-events: none; /* Allow clicks to pass through when inactive */
@@ -1716,6 +1718,7 @@ body:not(.light-mode) .moon-icon { display: none; }
 .mobile-mural-modal-overlay.active {
   opacity: 1;
   pointer-events: auto; /* Block clicks when active */
+  z-index: 5;
 }
 
 .mobile-mural-modal {
@@ -1729,7 +1732,7 @@ body:not(.light-mode) .moon-icon { display: none; }
   border-top-left-radius: 18px;
   border-top-right-radius: 18px;
   box-shadow: var(--panel-shadow);
-  z-index: 10000; /* Higher than other modals */
+  z-index: 6; /* Lowered from 10000 to manage stacking context better on mobile */
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth slide-up */
   display: flex;
   flex-direction: column;
@@ -1739,7 +1742,19 @@ body:not(.light-mode) .moon-icon { display: none; }
 }
 .mobile-mural-modal.active {
   transform: translateY(0); /* Slide up into view */
+  z-index: 6;
 }
+/* When Street View is active, allow the modal to take up more space */
+.mobile-mural-modal.street-view-active {
+  max-height: 100vh; /* Allow it to expand to full height */
+}
+
+/* When Street View is active, make the panel larger within the modal */
+.mobile-mural-modal.street-view-active [id$="-streetview-panel"] {
+  height: 70vh; /* Take up a significant portion of the screen */
+  min-height: 300px; /* Ensure a good minimum size */
+}
+
 
 /* Ensure Street View container has a specific height on mobile */
 .mobile-mural-modal [id$="-streetview-panel"] {

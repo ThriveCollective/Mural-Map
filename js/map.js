@@ -1230,11 +1230,32 @@ function setupMuralPopupContentListeners(mural, popupId, isMobile) {
     streetViewPanel.style.display = showStreetView ? "block" : "none";
     if (streetViewText) streetViewText.textContent = showStreetView ? "Hide Street View" : "Street View";
 
+    // NEW: Adjust mobile modal class if it's a mobile popup
+    if (isMobile) {
+      if (showStreetView) {
+        mobileMuralModal.classList.add('street-view-active');
+        streetViewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); // Scroll to the panel
+      } else {
+        mobileMuralModal.classList.remove('street-view-active');
+      }
+    }
     if (showStreetView && !streetViewInitialized) {
       streetViewInitialized = true;
-      new google.maps.StreetViewPanorama(streetViewPanel, {
+      const panorama = new google.maps.StreetViewPanorama(streetViewPanel, {
         position: { lat: mural.lat, lng: mural.lng },
+        pov: { heading: 0, pitch: 0 },
+        zoom: 1,
+        motionTracking: false,
+        addressControl: false,
+        fullscreenControl: false,
+        linksControl: false,
+        showRoadLabels: true,
         visible: true
+      });
+      panorama.addListener('status_changed', () => {
+        if (panorama.getStatus && panorama.getStatus() !== 'OK') {
+          streetViewPanel.innerHTML = '<div style="padding: 16px; color: #fff; text-align: center; font-size: 13px;">Street View is not available at this location.</div>';
+        }
       });
     }
   });
@@ -1259,7 +1280,17 @@ function setupMuralPopupContentListeners(mural, popupId, isMobile) {
   // Address Geocoding
   const addrText = popupEl.querySelector(`#${popupId}-address-text`);
   if (addrText) {
-    getAddressFromLatLng(mural.lat, mural.lng).then(addr => { if (addrText) addrText.textContent = addr; });
+    if (mural.address) {
+      addrText.textContent = mural.address;
+    } else {
+      getAddressFromLatLng(mural.lat, mural.lng).then(addr => { 
+        if (addrText) {
+          addrText.textContent = addr === "Location coordinates only" 
+            ? (mural.neighborhood ? `${mural.neighborhood}, ${mural.borough || 'NY'}` : `${mural.borough || 'New York'}, NY`)
+            : addr;
+        }
+      });
+    }
   }
 }
 
@@ -1284,6 +1315,7 @@ function closeMobileMuralPopup() {
   if (mobileMuralModal) {
     mobileMuralModalOverlay.classList.remove('active');
     mobileMuralModal.classList.remove('active');
+    mobileMuralModal.classList.remove('street-view-active'); // NEW: Remove class on close
     document.body.classList.remove('mobile-modal-open');
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   }
@@ -1494,7 +1526,6 @@ function showMuralPopup(markerOrMural) {
   
   if (isMobilePopup) {
     openMobileMuralPopup(html);
-    setupMuralPopupContentListeners(m, popupId, true);
   } else if (anchor && anchor.map) {
     infoWindow.open({ anchor: anchor, map: map });
   } else if (m.lat && m.lng) {
@@ -1611,128 +1642,9 @@ function showMuralPopup(markerOrMural) {
       });
     }
 
-    // ── Carousel Controls ─────────────────────────────────────────────────────
-    if (images.length > 1) {
-      const nextBtn = document.getElementById(`${popupId}-next`);
-      const prevBtn = document.getElementById(`${popupId}-prev`);
-      const imgEl = document.getElementById(`${popupId}-img`);
-
-      if (nextBtn && prevBtn && imgEl) {
-        let currentIndex = 0;
-        
-        nextBtn.addEventListener('click', () => {
-          currentIndex = (currentIndex + 1) % images.length;
-          imgEl.src = images[currentIndex];
-          imgEl.dataset.index = currentIndex;
-        });
-
-        prevBtn.addEventListener('click', () => {
-          currentIndex = (currentIndex - 1 + images.length) % images.length;
-          imgEl.src = images[currentIndex];
-          imgEl.dataset.index = currentIndex;
-        });
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    const focusBtn = document.getElementById(`${popupId}-focus`);
-    focusBtn?.addEventListener("click", () => {
-      map.panTo({ lat: m.lat, lng: m.lng });
-      if (map.getZoom() < 15) {
-        map.setZoom(15);
-      }
-    });
-
-    const streetViewBtn = document.getElementById(`${popupId}-streetview`);
-    const streetViewPanel = document.getElementById(`${popupId}-streetview-panel`);
-    const streetViewText = document.getElementById(`${popupId}-streetview-text`);
-    let streetViewInitialized = false;
-
-    streetViewBtn?.addEventListener("click", () => {
-      if (!streetViewPanel) return;
-      const showStreetView = streetViewPanel.style.display !== "block";
-      streetViewPanel.style.display = showStreetView ? "block" : "none";
-      if (streetViewText) {
-        streetViewText.textContent = showStreetView ? "Hide Street View" : "Street View";
-      }
-
-      if (showStreetView && !streetViewInitialized) {
-        streetViewInitialized = true;
-        const panorama = new google.maps.StreetViewPanorama(streetViewPanel, {
-          position: { lat: m.lat, lng: m.lng },
-          pov: { heading: 0, pitch: 0 },
-          zoom: 1,
-          motionTracking: false,
-          addressControl: false,
-          fullscreenControl: false,
-          linksControl: false,
-          showRoadLabels: true,
-          visible: true
-        });
-        panorama.addListener('status_changed', () => {
-          if (panorama.getStatus && panorama.getStatus() !== 'OK') {
-            streetViewPanel.innerHTML = '<div style="padding: 16px; color: #fff; text-align: center;">Street View is not available at this location.</div>';
-          }
-        });
-      }
-    });
-
-    const saveBtn = document.getElementById(`${popupId}-save`);
-    saveBtn?.addEventListener("click", () => {
-      toggleSaveMural(m);
-      const currentlySaved = savedMurals.some(sm => sm.uid === m.uid);
-      saveBtn.innerHTML = `
-        <span style="font-size: 16px;">${currentlySaved ? '❤️' : '🤍'}</span>
-        <span>${currentlySaved ? 'Saved' : 'Save'}</span>
-      `;
-      saveBtn.style.borderColor = currentlySaved ? '#ef4444' : 'var(--panel-border)';
-      saveBtn.style.background = currentlySaved ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
-      saveBtn.style.color = currentlySaved ? '#ef4444' : 'var(--text-main)';
-    });
-
-    // ── Directions button ─────────────────────────────────────────────────────
-    const directionsBtn = document.getElementById(`${popupId}-directions`);
-    directionsBtn?.addEventListener("click", () => {
-      if (!userLocation) {
-        alert("Please set your starting location first using the address bar or GPS button in the sidebar.");
-        return;
-      }
-      window.calculateTransitDirections(m.lat, m.lng, m.name);
-    });
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // ── Reverse-geocode the mural's lat/lng to get a real street address ──
-    // Normalize coordinates for consistent cache keys
-    const cacheKey = `${parseFloat(m.lat).toFixed(6)},${parseFloat(m.lng).toFixed(6)}`;
-    const addressTextEl = document.getElementById(`${popupId}-address-text`);
-
-    if (addressTextEl) {
-      if (m.address) {
-        addressTextEl.textContent = m.address;
-      } else if (geocodeCache.has(cacheKey)) {
-        const cached = geocodeCache.get(cacheKey);
-        addressTextEl.textContent = cached.formatted;
-      } else if (geocoder) {
-        geocoder.geocode({ location: { lat: m.lat, lng: m.lng } }, (results, status) => {
-          let formatted;
-          if (status === "OK" && results && results[0]) {
-            formatted = results[0].formatted_address;
-          } else {
-            formatted = m.neighborhood
-              ? `${m.neighborhood}, ${m.borough || 'New York'}, NY`
-              : `${m.borough || 'New York'}, NY`;
-          }
-          geocodeCache.set(cacheKey, { formatted });
-          const el = document.getElementById(`${popupId}-address-text`);
-          if (el) el.textContent = formatted;
-        });
-      } else {
-        addressTextEl.textContent = m.neighborhood
-          ? `${m.neighborhood}, ${m.borough || 'New York'}, NY`
-          : `${m.borough || 'New York'}, NY`;
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────
+    // Initialize interaction listeners (Carousel, Save, Street View, etc.)
+    // Centered logic ensures only one set of listeners is attached for either mobile or desktop.
+    setupMuralPopupContentListeners(m, popupId, isMobilePopup);
   }, 100);
 }
 
