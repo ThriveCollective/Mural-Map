@@ -1741,6 +1741,13 @@ body:not(.light-mode) .moon-icon { display: none; }
   transform: translateY(0); /* Slide up into view */
 }
 
+/* Ensure Street View container has a specific height on mobile */
+.mobile-mural-modal [id$="-streetview-panel"] {
+  min-height: 250px;
+  height: 250px;
+  width: 100%;
+}
+
 /* Prevent body scrolling when mobile modal is open */
 body.mobile-modal-open {
   overflow: hidden;
