@@ -39,6 +39,9 @@ let routeRenderers = [];
 let muralHistory = JSON.parse(localStorage.getItem('mural_history') || '[]');
 let savedMurals = JSON.parse(localStorage.getItem('saved_murals') || '[]');
 
+let mobileMuralModal = null;
+let mobileMuralModalOverlay = null;
+
 // ── Theme Helper ─────────────────────────────────────────────────────────────
 /**
  * Determines if the UI should be in light mode based on localStorage or system preference.
@@ -1172,6 +1175,120 @@ function renderSavedMurals() {
   container.appendChild(fragment);
 }
 
+/**
+ * Sets up interactive listeners for mural popup content (carousel, save, directions, etc.).
+ * Centralized so it works for both Google Maps InfoWindow (Desktop) and Mobile Modal.
+ */
+function setupMuralPopupContentListeners(mural, popupId, isMobile) {
+  const containerEl = isMobile ? mobileMuralModal : infoWindow.getContent();
+  if (!containerEl) return;
+
+  // Find elements within the correct container
+  const popupEl = containerEl.querySelector(`#${popupId}`) || (isMobile ? containerEl : null);
+  if (!popupEl) return;
+
+  // Carousel Controls
+  const images = mural.image_url 
+    ? mural.image_url.split(REGEX_IMAGE_SPLIT).map(url => url.trim()).filter(url => url && url.toLowerCase().startsWith('http'))
+    : [];
+
+  if (images.length > 1) {
+    const nextBtn = popupEl.querySelector(`#${popupId}-next`);
+    const prevBtn = popupEl.querySelector(`#${popupId}-prev`);
+    const imgEl = popupEl.querySelector(`#${popupId}-img`);
+
+    if (nextBtn && prevBtn && imgEl) {
+      let currentIndex = 0;
+      nextBtn.addEventListener('click', () => {
+        currentIndex = (currentIndex + 1) % images.length;
+        imgEl.src = images[currentIndex];
+        imgEl.dataset.index = currentIndex;
+      });
+      prevBtn.addEventListener('click', () => {
+        currentIndex = (currentIndex - 1 + images.length) % images.length;
+        imgEl.src = images[currentIndex];
+        imgEl.dataset.index = currentIndex;
+      });
+    }
+  }
+
+  // Focus button
+  popupEl.querySelector(`#${popupId}-focus`)?.addEventListener("click", () => {
+    map.panTo({ lat: mural.lat, lng: mural.lng });
+    if (map.getZoom() < 15) map.setZoom(15);
+  });
+
+  // Street View button
+  const streetViewBtn = popupEl.querySelector(`#${popupId}-streetview`);
+  const streetViewPanel = popupEl.querySelector(`#${popupId}-streetview-panel`);
+  const streetViewText = popupEl.querySelector(`#${popupId}-streetview-text`);
+  let streetViewInitialized = false;
+
+  streetViewBtn?.addEventListener("click", () => {
+    if (!streetViewPanel) return;
+    const showStreetView = streetViewPanel.style.display !== "block";
+    streetViewPanel.style.display = showStreetView ? "block" : "none";
+    if (streetViewText) streetViewText.textContent = showStreetView ? "Hide Street View" : "Street View";
+
+    if (showStreetView && !streetViewInitialized) {
+      streetViewInitialized = true;
+      new google.maps.StreetViewPanorama(streetViewPanel, {
+        position: { lat: mural.lat, lng: mural.lng },
+        visible: true
+      });
+    }
+  });
+
+  // Save button
+  const saveBtn = popupEl.querySelector(`#${popupId}-save`);
+  saveBtn?.addEventListener("click", () => {
+    toggleSaveMural(mural);
+    const currentlySaved = savedMurals.some(sm => sm.uid === mural.uid);
+    saveBtn.innerHTML = `<span style="font-size: 16px;">${currentlySaved ? '❤️' : '🤍'}</span> <span>${currentlySaved ? 'Saved' : 'Save'}</span>`;
+    saveBtn.style.borderColor = currentlySaved ? '#ef4444' : 'var(--panel-border)';
+    saveBtn.style.background = currentlySaved ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
+    saveBtn.style.color = currentlySaved ? '#ef4444' : 'var(--text-main)';
+  });
+
+  // Directions button
+  popupEl.querySelector(`#${popupId}-directions`)?.addEventListener("click", () => {
+    if (!userLocation) { alert("Please set your starting location first."); return; }
+    window.calculateTransitDirections(mural.lat, mural.lng, mural.name);
+  });
+
+  // Address Geocoding
+  const addrText = popupEl.querySelector(`#${popupId}-address-text`);
+  if (addrText) {
+    getAddressFromLatLng(mural.lat, mural.lng).then(addr => { if (addrText) addrText.textContent = addr; });
+  }
+}
+
+function openMobileMuralPopup(htmlContent) {
+  if (!mobileMuralModal) {
+    mobileMuralModalOverlay = document.createElement('div');
+    mobileMuralModalOverlay.className = 'mobile-mural-modal-overlay';
+    document.body.appendChild(mobileMuralModalOverlay);
+    mobileMuralModal = document.createElement('div');
+    mobileMuralModal.className = 'mobile-mural-modal';
+    document.body.appendChild(mobileMuralModal);
+    mobileMuralModalOverlay.addEventListener('click', closeMobileMuralPopup);
+  }
+  mobileMuralModal.innerHTML = htmlContent;
+  mobileMuralModalOverlay.classList.add('active');
+  mobileMuralModal.classList.add('active');
+  document.body.classList.add('mobile-modal-open');
+  if (infoWindow) infoWindow.close();
+}
+
+function closeMobileMuralPopup() {
+  if (mobileMuralModal) {
+    mobileMuralModalOverlay.classList.remove('active');
+    mobileMuralModal.classList.remove('active');
+    document.body.classList.remove('mobile-modal-open');
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+}
+
 function showMuralPopup(markerOrMural) {
   const m = markerOrMural.mural || markerOrMural;
   const anchor = markerOrMural.mural ? markerOrMural : null;
@@ -1377,6 +1494,7 @@ function showMuralPopup(markerOrMural) {
   
   if (isMobilePopup) {
     openMobileMuralPopup(html);
+    setupMuralPopupContentListeners(m, popupId, true);
   } else if (anchor && anchor.map) {
     infoWindow.open({ anchor: anchor, map: map });
   } else if (m.lat && m.lng) {

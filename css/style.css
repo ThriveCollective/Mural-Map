@@ -1698,3 +1698,50 @@ body:not(.light-mode) .moon-icon { display: none; }
   opacity: 1;
   visibility: visible;
 }
+
+/* ── Mobile Mural Popup Modal ────────────────────────────────────────── */
+.mobile-mural-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay);
+  z-index: 9999; /* Below the modal, above map */
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  pointer-events: none; /* Allow clicks to pass through when inactive */
+}
+
+.mobile-mural-modal-overlay.active {
+  opacity: 1;
+  pointer-events: auto; /* Block clicks when active */
+}
+
+.mobile-mural-modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: auto; /* Allow content to define height up to max-height */
+  max-height: 90vh; /* Max height for the modal */
+  background: var(--modal-bg);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  box-shadow: var(--panel-shadow);
+  z-index: 10000; /* Higher than other modals */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth slide-up */
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* Enable scrolling for content */
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  transform: translateY(100%); /* Start off-screen */
+}
+.mobile-mural-modal.active {
+  transform: translateY(0); /* Slide up into view */
+}
+
+/* Prevent body scrolling when mobile modal is open */
+body.mobile-modal-open {
+  overflow: hidden;
+}
