@@ -818,6 +818,9 @@ function createMarkers(murals) {
         marker.addListener("gmp-click", () => {
           showMuralPopup(marker);
         });
+        marker.addListener("click", () => {
+          showMuralPopup(marker);
+        });
         tourMarkers.push(marker);
       }
     });
@@ -877,6 +880,9 @@ function createMarkers(murals) {
    marker.addListener("gmp-click", () => {
      showMuralPopup(marker);
    });
+   marker.addListener("click", () => {
+     showMuralPopup(marker);
+   });
 
    markers.push(marker);
  });
@@ -894,6 +900,9 @@ function createMarkers(murals) {
     marker.mural = mural;
 
     marker.addListener("gmp-click", () => {
+      showMuralPopup(marker);
+    });
+    marker.addListener("click", () => {
       showMuralPopup(marker);
     });
 
