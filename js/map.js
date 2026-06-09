@@ -805,11 +805,16 @@ function createMarkers(murals) {
     murals.forEach(mural => {
       const stopNumber = tourStopNumbers.get(mural.uid);
       if (stopNumber !== undefined) {
+        const markerContent = createNumberedMarkerContent(stopNumber, tourColor);
+        markerContent.style.touchAction = 'manipulation';
+        markerContent.style.pointerEvents = 'auto';
+        markerContent.style.cursor = 'pointer';
+
         const marker = new google.maps.marker.AdvancedMarkerElement({
           position: { lat: mural.lat, lng: mural.lng },
           map: map,
           title: mural.name,
-          content: createNumberedMarkerContent(stopNumber, tourColor),
+          content: markerContent,
           zIndex: 1000
         });
 
@@ -819,6 +824,14 @@ function createMarkers(murals) {
           showMuralPopup(marker);
         });
         marker.addListener("click", () => {
+          showMuralPopup(marker);
+        });
+        markerContent.addEventListener('click', (event) => {
+          event.stopPropagation();
+          showMuralPopup(marker);
+        });
+        markerContent.addEventListener('touchend', (event) => {
+          event.stopPropagation();
           showMuralPopup(marker);
         });
         tourMarkers.push(marker);
@@ -869,11 +882,16 @@ function createMarkers(murals) {
      collision.instance++;
    }
 
+   const markerContent = createMarkerElement('marker-dot');
+   markerContent.style.touchAction = 'manipulation';
+   markerContent.style.pointerEvents = 'auto';
+   markerContent.style.cursor = 'pointer';
+
    const marker = new google.maps.marker.AdvancedMarkerElement({
      position: { lat: lat, lng: lng }, // Use the updated lat/lng with jitter
      map: null,
      title: mural.name,
-     content: createMarkerElement('marker-dot')
+     content: markerContent
    });
 
    marker.mural = mural;
@@ -883,17 +901,30 @@ function createMarkers(murals) {
    marker.addListener("click", () => {
      showMuralPopup(marker);
    });
+   markerContent.addEventListener('click', (event) => {
+     event.stopPropagation();
+     showMuralPopup(marker);
+   });
+   markerContent.addEventListener('touchend', (event) => {
+     event.stopPropagation();
+     showMuralPopup(marker);
+   });
 
    markers.push(marker);
  });
 
   // Create numbered tour markers (added directly to map, not clustered)
   tourMurals.forEach(({ mural, stopNumber }) => {
+    const markerContent = createNumberedMarkerContent(stopNumber, tourColor);
+    markerContent.style.touchAction = 'manipulation';
+    markerContent.style.pointerEvents = 'auto';
+    markerContent.style.cursor = 'pointer';
+
     const marker = new google.maps.marker.AdvancedMarkerElement({
       position: { lat: mural.lat, lng: mural.lng },
       map: map,
       title: mural.name,
-      content: createNumberedMarkerContent(stopNumber, tourColor),
+      content: markerContent,
       zIndex: 1000
     });
 
@@ -903,6 +934,14 @@ function createMarkers(murals) {
       showMuralPopup(marker);
     });
     marker.addListener("click", () => {
+      showMuralPopup(marker);
+    });
+    markerContent.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showMuralPopup(marker);
+    });
+    markerContent.addEventListener('touchend', (event) => {
+      event.stopPropagation();
       showMuralPopup(marker);
     });
 

@@ -130,6 +130,15 @@ html.fullscreen-active .toast {
 }
 
 /* ── Optimized Marker Styles (using minimal DOM nodes) ── */
+.mural-marker-vnode,
+.marker-dot,
+.marker-number,
+.marker-cluster,
+.marker-highlight {
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
 .mural-marker-vnode {
   display: flex;
   align-items: center;
