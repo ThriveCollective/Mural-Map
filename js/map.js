@@ -1211,10 +1211,10 @@ function showMuralPopup(markerOrMural) {
   }
 
   const html = `
-    <div id="${popupId}" style="width:min(500px, calc(100vw - 32px)); min-width:0; max-width:calc(100vw - 32px); font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 20px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; border-radius: 8px; flex-shrink: 0;">
+    <div id="${popupId}" style="width:min(500px, calc(100vw - 32px)); min-width:0; max-width:calc(100vw - 32px); font-family: system-ui, sans-serif; color: var(--text-main); background: var(--panel-bg); padding: 16px; box-sizing: border-box; max-height: 80vh; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; border-radius: 8px; flex-shrink: 0;">
       <!-- Header with Title and Close Button -->
       <div style="position: relative; margin-bottom: 16px;">
-        <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--heading-color); text-align: center; padding-right: 30px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--heading-color); text-align: center; padding-right: 30px;">
           ${m.name}${m.year ? ` (${m.year})` : ''}
         </h2>
         <button id="${popupId}-close" 
@@ -1391,13 +1391,15 @@ function showMuralPopup(markerOrMural) {
   setTimeout(() => {
     const iwOuter = document.querySelector('.gm-style-iw-d');
     const iwContainer = document.querySelector('.gm-style-iw-c');
+    const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
+    const isNarrowPhone = window.matchMedia('(max-width: 420px)').matches;
+    const widthStr = isNarrowPhone ? 'calc(100vw - 20px)' : (isMobilePopup ? 'calc(100vw - 32px)' : 'var(--iw-width, 500px)');
     
     if (iwOuter) {
-      const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
       iwOuter.style.background = 'var(--panel-bg)';
       iwOuter.style.color = 'var(--text-main)';
-      iwOuter.style.width = isMobilePopup ? 'calc(100vw - 32px)' : 'var(--iw-width, 500px)';
-      iwOuter.style.maxWidth = isMobilePopup ? 'calc(100vw - 32px)' : '500px';
+      iwOuter.style.width = widthStr;
+      iwOuter.style.maxWidth = widthStr === 'var(--iw-width, 500px)' ? '500px' : widthStr;
       iwOuter.style.left = isMobilePopup ? '50%' : '';
       iwOuter.style.transform = isMobilePopup ? 'translateX(-50%)' : '';
       iwOuter.style.display = 'block';
@@ -1408,10 +1410,9 @@ function showMuralPopup(markerOrMural) {
     }
     
     if (iwContainer) {
-      const isMobilePopup = window.matchMedia('(max-width: 900px)').matches;
       iwContainer.style.background = 'var(--panel-bg)';
-      iwContainer.style.width = isMobilePopup ? 'calc(100vw - 32px)' : 'var(--iw-width, 500px)';
-      iwContainer.style.maxWidth = isMobilePopup ? 'calc(100vw - 32px)' : '500px';
+      iwContainer.style.width = widthStr;
+      iwContainer.style.maxWidth = widthStr === 'var(--iw-width, 500px)' ? '500px' : widthStr;
       iwContainer.style.overflow = 'hidden';
       iwContainer.style.maxHeight = 'none';
       iwContainer.style.touchAction = 'pan-y';
@@ -1430,28 +1431,40 @@ function showMuralPopup(markerOrMural) {
       el.style.maxHeight = 'none';
     });
 
-    const isNarrowPhone = window.matchMedia('(max-width: 420px)').matches;
     if (isNarrowPhone) {
       const popup = document.getElementById(popupId);
       if (popup) {
-        popup.style.padding = '14px 12px';
+        popup.style.padding = '12px 10px';
         popup.style.width = 'calc(100vw - 20px)';
         popup.style.maxWidth = 'calc(100vw - 20px)';
       }
+
+      const title = popup?.querySelector('h2');
+      if (title) title.style.fontSize = '16px';
+
+      const imgCard = popup?.querySelector('.popup-image-card');
+      if (imgCard) {
+        imgCard.style.marginBottom = '12px';
+        const imgWrapper = imgCard.querySelector('div');
+        if (imgWrapper) imgWrapper.style.paddingTop = '50%';
+      }
+
       const metaGrid = popup?.querySelector('.popup-meta-grid');
       if (metaGrid) {
         metaGrid.style.gridTemplateColumns = '1fr';
-        metaGrid.style.gap = '10px';
+        metaGrid.style.gap = '8px';
+        metaGrid.style.marginBottom = '12px';
       }
       const actionRow = popup?.querySelector('.popup-action-row');
       if (actionRow) {
         actionRow.style.flexDirection = 'column';
-        actionRow.style.gap = '10px';
+        actionRow.style.gap = '8px';
       }
       const buttons = popup?.querySelectorAll('button, a');
       buttons?.forEach(el => {
-        el.style.minHeight = '42px';
-        el.style.fontSize = '13px';
+        el.style.minHeight = '40px';
+        el.style.fontSize = '12px';
+      });
       });
     }
     

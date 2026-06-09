@@ -1243,8 +1243,8 @@ html.fullscreen-active .toast {
 @media (max-width: 900px) {
   .gm-style-iw-d,
   .gm-style-iw-c {
-    width: auto !important;
-    min-width: auto !important;
+    width: calc(100vw - 32px) !important;
+    min-width: calc(100vw - 32px) !important;
     max-width: calc(100vw - 32px) !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
@@ -1255,6 +1255,15 @@ html.fullscreen-active .toast {
   .gm-style-iw-d > div,
   .gm-style-iw-c > div {
     min-width: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .gm-style-iw-d,
+  .gm-style-iw-c {
+    width: calc(100vw - 20px) !important;
+    min-width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
   }
 }
 
