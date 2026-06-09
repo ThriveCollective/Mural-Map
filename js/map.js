@@ -747,7 +747,7 @@ function createMarkerElement(type = 'marker-dot', color, label) {
 
   const el = document.createElement('div');
   el.className = type;
-  el.style.touchAction = 'none';
+  el.style.touchAction = 'manipulation';
   el.style.pointerEvents = 'auto';
   el.style.webkitTapHighlightColor = 'transparent';
   el.style.cursor = 'pointer';
@@ -766,32 +766,6 @@ function createMarkerElement(type = 'marker-dot', color, label) {
   }
 
   return el;
-}
-
-function bindMarkerTouchHandler(marker, content) {
-  if (!content || !content.addEventListener) return;
-  let triggered = false;
-  const openPopup = () => {
-    if (triggered) return;
-    triggered = true;
-    showMuralPopup(marker);
-    setTimeout(() => {
-      triggered = false;
-    }, 0);
-  };
-
-  const preventAndOpen = (event) => {
-    if (event.cancelable) {
-      event.preventDefault();
-    }
-    event.stopPropagation();
-    openPopup();
-  };
-
-  content.addEventListener('touchstart', preventAndOpen, { passive: false });
-  content.addEventListener('touchend', preventAndOpen, { passive: false });
-  content.addEventListener('pointerdown', preventAndOpen, { passive: false });
-  content.addEventListener('pointerup', preventAndOpen, { passive: false });
 }
 
 /**
@@ -852,7 +826,6 @@ function createMarkers(murals) {
         marker.addListener("gmp-click", () => {
           showMuralPopup(marker);
         });
-        bindMarkerTouchHandler(marker, markerContent);
         tourMarkers.push(marker);
       }
     });
@@ -913,7 +886,6 @@ function createMarkers(murals) {
    marker.addListener("gmp-click", () => {
      showMuralPopup(marker);
    });
-   bindMarkerTouchHandler(marker, markerContent);
 
    markers.push(marker);
  });
@@ -934,7 +906,6 @@ function createMarkers(murals) {
     marker.addListener("gmp-click", () => {
       showMuralPopup(marker);
     });
-    bindMarkerTouchHandler(marker, markerContent);
 
     tourMarkers.push(marker);
   });
@@ -1201,8 +1172,10 @@ function renderSavedMurals() {
   container.appendChild(fragment);
 }
 
-function showMuralPopup(marker) {
-  const m = marker.mural;
+function showMuralPopup(markerOrMural) {
+  const m = markerOrMural.mural || markerOrMural;
+  const anchor = markerOrMural.mural ? markerOrMural : null;
+  
   addToRecents(m);
   
   // Create unique ID for this popup's carousel
@@ -1400,7 +1373,13 @@ function showMuralPopup(marker) {
   `;
 
   infoWindow.setContent(html);
-  infoWindow.open(map, marker);
+  
+  if (anchor && anchor.map) {
+    infoWindow.open({ anchor: anchor, map: map });
+  } else if (m.lat && m.lng) {
+    infoWindow.setPosition({ lat: parseFloat(m.lat), lng: parseFloat(m.lng) });
+    infoWindow.open(map);
+  }
 
   if (narratorEnabled && window.speechSynthesis) {
     const speechDescription = tourNarrative && tourNarrative !== m.description ? tourNarrative : m.description;
@@ -2526,6 +2505,16 @@ function focusOnMuralByUid(uid) {
   // 1. Close the search results summary popup
   if (searchInfoWindow) searchInfoWindow.close();
 
+  const marker = markers.find(m => m.mural.uid === uid) || tourMarkers.find(m => m.mural.uid === uid);
+  const mural = marker ? marker.mural : allMurals.find(m => m.uid === uid);
+
+  if (!mural) return;
+
+  // NEW: Hide sidebar on mobile so the user can see the map result
+  if (window.setSidebarVisibility && window.matchMedia("(max-width: 768px)").matches) {
+    window.setSidebarVisibility(false);
+  }
+
   if (activeTourDefinition && activeTourOrderedStops && activeTourOrderedStops.length) {
     const tourIndex = activeTourOrderedStops.findIndex(stop => stop.uid === uid);
     if (tourIndex !== -1) {
@@ -2540,14 +2529,21 @@ function focusOnMuralByUid(uid) {
     }
   }
 
-  const marker = markers.find(m => m.mural.uid === uid);
-  if (marker) {
-    map.panTo(marker.position);
-    if (map.getZoom() < 15) {
-      map.setZoom(15);
-    }
-    google.maps.event.trigger(marker, "gmp-click");
+  const pos = { lat: parseFloat(mural.lat), lng: parseFloat(mural.lng) };
+  map.panTo(pos);
+  if (map.getZoom() < 15) {
+    map.setZoom(15);
   }
+
+  // Use a small delay to allow map to settle and markers to uncluster
+  setTimeout(() => {
+    if (marker && marker.map) {
+      google.maps.event.trigger(marker, "gmp-click");
+    } else {
+      // Fallback: If marker is missing or clustered, open popup at position
+      showMuralPopup(marker || mural);
+    }
+  }, 300);
 }
 window.focusOnMuralByUid = focusOnMuralByUid;
 
