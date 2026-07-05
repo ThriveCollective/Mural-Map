@@ -1,45 +1,170 @@
 <!DOCTYPE html>
+<!-- 
+  ============================================================
+  THRIVE COLLECTIVE - MURAL MAP
+  ============================================================
+  WHAT THIS PAGE DOES:
+  This is an interactive map application that shows public murals 
+  in New York City. Users can search for murals near their location,
+  filter by various criteria, create walking tours, and save 
+  favorite murals.
+
+  HOW TO USE IT:
+  1. Enter your address or zip code in the search bar
+  2. Click "Start" or "Use Device GPS" to find murals near you
+  3. Use the filters to narrow down results (year, school, borough)
+  4. Click on any mural marker on the map for more details
+  5. Save murals you like or create a custom walking tour
+  6. Toggle between Light and Dark mode using the theme button
+
+  TECHNICAL OVERVIEW:
+  - Uses Google Maps API for mapping and geocoding
+  - Data is loaded from CSV file with mural information
+  - All interactions are handled in the map.js file
+  - Configuration settings are in config.js and secretconfig.js
+  ============================================================
+-->
+
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
+<head>
+    <!-- 
+      METADATA SECTION
+      These tags tell browsers and search engines what this page is about.
+      The viewport tag ensures it looks good on phones and tablets.
+    -->
+    <meta charset="UTF-8">
     <title>Thrive Collective - Mural Map</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
+    <!-- 
+      STYLESHEET
+      This file contains ALL the visual styling for the page:
+      - Colors, fonts, spacing
+      - Layout for sidebar, map, and buttons
+      - Light/dark mode themes
+      - Responsive design for different screen sizes
+    -->
     <link rel="stylesheet" href="css/style.css" />
+    
+    <!-- 
+      FAVICON
+      This tiny icon shows in the browser tab. 
+      Using data:;base64 creates a blank icon to avoid 404 errors.
+    -->
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-  </head>   
-  <body>
+</head>
+<body>
+    <!-- 
+      ============================================================
+      MAIN APP CONTAINER
+      Everything visible on the page lives inside this div.
+      It's like the "stage" where all the actors (components) perform.
+      ============================================================
+    -->
     <div id="app">
+      
+      <!-- 
+        ============================================================
+        SIDEBAR (Left Panel)
+        This is the control panel where users interact with the map.
+        It contains all the buttons, filters, and information displays.
+        ============================================================
+      -->
       <aside id="sidebar">
+        
+        <!-- 
+          HIDE SIDEBAR BUTTON
+          Clicking this collapses the sidebar to give more room for the map.
+          The "‹" character is a left arrow symbol.
+          The aria-label helps screen readers understand the button's purpose.
+        -->
         <button id="sidebarHideBtn" class="sidebar-hide-btn" aria-label="Hide sidebar">
           <span>‹</span>
         </button>
+        
+        <!-- 
+          HEADER SECTION
+          Displays the Thrive Collective logo and the theme toggle button.
+          The logo image should be in the same folder as this HTML file.
+        -->
         <header class="sidebar-header">
           <img src="ThriveCollective_BlackLogoHorizontal.png" alt="Thrive Collective" class="logo" />
+          
+          <!-- 
+            THEME TOGGLE
+            Switches between Light and Dark mode.
+            Changes colors of the entire page for better visibility in different lighting.
+          -->
           <button id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode">
-            <span class="sun-icon">☀️</span>
-            <span class="moon-icon">🌙</span>
+            <span class="sun-icon">Light</span>
+            <span class="moon-icon">Dark</span>
             <span id="themeToggleText">Light Mode</span>
           </button>
         </header>
 
+        <!-- 
+          ============================================================
+          LOCATION SEARCH PANEL
+          This is where users tell the map where they are.
+          ============================================================
+        -->
         <section class="utility-panel">
           <div class="utility-headline">
-            <p>Find a mural Near You.</p>
+            <p>Find a mural near you.</p>
           </div>
-          <input id="manual-address-input" type="text" placeholder="Enter your address or zip code…" class="address-input" autocomplete="off" />
+          
+          <!-- 
+            ADDRESS INPUT
+            Users type their address, zip code, or neighborhood here.
+            The autocomplete feature suggests addresses as they type.
+          -->
+          <input id="manual-address-input" type="text" placeholder="Enter your address or zip code..." class="address-input" autocomplete="off" />
+          
+          <!-- 
+            LOCATION ACTION BUTTONS
+            Three ways to find your location:
+            1. "Start" - Uses the address you typed
+            2. "Use Device GPS" - Uses your phone/computer's GPS
+            3. "Clear" - Resets your location and shows all murals
+          -->
           <div class="location-actions">
             <button id="start-search-btn" class="primary-btn">Start</button>
             <button id="use-device-gps-btn" class="ghost-btn">Use Device GPS</button>
             <button id="clearLocationBtn" class="ghost-btn">Clear</button>
           </div>
+          
+          <!-- 
+            RESULTS DISPLAY
+            Shows the nearest murals found based on your location.
+            This area updates dynamically as you search.
+          -->
           <div id="nearestResults" class="nearest-results empty"></div>
         </section>
 
+        <!-- 
+          ============================================================
+          CUSTOM TOUR CREATOR
+          This panel lets users create a personalized walking tour.
+          ============================================================
+        -->
         <section class="custom-tour-trigger-panel">
+          
+          <!-- 
+            TOUR SETTING
+            Choose what type of murals to include:
+            - Exterior Only: Murals on outside walls
+            - Both: All murals
+            - Interior Only: Murals inside buildings
+          -->
           <div id="customTourSettingWrapper" style="margin-bottom: 10px;">
             <label for="customTourSetting" style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; display: block; font-weight: 600; letter-spacing: 0.5px;">
               Tour Setting
-              <span class="info-tip" data-tip="Exterior: Public murals. Interior: Inside buildings. Any: Mixed tour.">ⓘ</span>
+              <!-- 
+                INFO TIP
+                The (?) shows a tooltip explaining what each option does.
+              -->
+              <span class="info-tip" data-tip="Exterior: Public murals. Interior: Inside buildings. Any: Mixed tour.">(?)</span>
             </label>
             <select id="customTourSetting" class="filter-select">
               <option value="exterior" selected>Exterior Only</option>
@@ -47,6 +172,12 @@
               <option value="interior">Interior Only</option>
             </select>
           </div>
+          
+          <!-- 
+            TOUR RADIUS
+            A slider that controls how far from your location to look for murals.
+            Move the slider right to see murals farther away, left to see closer ones.
+          -->
           <div id="customTourRadiusWrapper" style="margin-bottom: 10px;">
             <label for="customTourRadius" style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; display: block; font-weight: 600; letter-spacing: 0.5px;">
               Tour Radius
@@ -54,6 +185,12 @@
             </label>
             <input id="customTourRadius" type="range" min="0.5" max="5" step="0.5" value="1" />
           </div>
+          
+          <!-- 
+            MURAL COUNT
+            How many murals you want in your tour.
+            Slide right for more murals, left for fewer.
+          -->
           <div id="customTourLimitWrapper" style="margin-bottom: 10px;">
             <label for="customTourLimit" style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; display: block; font-weight: 600; letter-spacing: 0.5px;">
               Mural Count
@@ -61,60 +198,124 @@
             </label>
             <input id="customTourLimit" type="range" min="2" max="20" step="1" value="6" />
           </div>
+          
+          <!-- 
+            TOUR SUMMARY
+            Shows a preview of the tour based on your current settings.
+          -->
           <div id="customTourSummary" style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px; min-height: 18px;">Set your location first to preview local tour stops.</div>
+          
+          <!-- 
+            CREATE TOUR BUTTON
+            Click this to generate and display your custom walking tour.
+          -->
           <button id="createCustomTourBtn" class="custom-tour-header-btn">
-            <span>✨</span> Create Local Tour
+            <span>Create Local Tour</span>
           </button>
         </section>
 
+        <!-- 
+          ============================================================
+          FILTERS SECTION
+          These controls help users narrow down which murals they see.
+          ============================================================
+        -->
         <section class="filters">
+          
+          <!-- 
+            MURAL VIEW SLIDER
+            Controls how many murals appear on the map at once.
+            100% shows all murals, lower percentages show a random subset.
+            This helps reduce clutter on the map.
+          -->
           <div class="filter-group">
-            <label>Mural View <span class="info-tip" data-tip="Reduces map clutter by displaying a random sampling of murals. Move the slider to change the percentage of murals shown.">ⓘ</span> — <span id="muralViewLabel">100%</span></label>
+            <label>Mural View <span class="info-tip" data-tip="Reduces map clutter by displaying a random sampling of murals.">(?)</span> — <span id="muralViewLabel">100%</span></label>
             <input type="range" id="muralViewSlider" min="10" max="100" step="5" value="100" class="mural-view-slider" />
           </div>
+          
+          <!-- 
+            CLEAR ALL FILTERS
+            Resets all filter selections to show all murals again.
+          -->
           <div class="filter-group">
              <button id="clearAllFiltersBtn" class="ghost-btn" style="width: 100%; margin-top: 5px;">Clear All Filters</button>
           </div>
+          
+          <!-- 
+            COUNCIL DISTRICTS TOGGLE
+            Shows or hides political district boundaries on the map.
+            Helpful for understanding which murals are in which neighborhoods.
+          -->
           <div class="filter-group" style="margin-top: 15px; border-top: 1px solid var(--panel-border); padding-top: 15px;">
             <label style="display: flex; align-items: center; cursor: pointer; color: var(--text-main);">
               <input type="checkbox" id="toggleDistricts" checked style="margin-right: 10px; width: 18px; height: 18px;">
               Show Council Districts
             </label>
           </div>
+          
+          <!-- 
+            NARRATOR TOGGLE
+            When enabled, the page will read mural information aloud.
+            This is an accessibility feature for visually impaired users.
+          -->
           <div class="filter-group" style="margin-top: 10px;">
             <label style="display: flex; align-items: center; cursor: pointer; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.02em;">
               <input type="checkbox" id="enableNarrator" style="margin-right: 10px; width: 18px; height: 18px;">
-              ENABLE NARRATOR
+              Enable Narrator
             </label>
           </div>
 
-          <!-- Main Search Bar (always visible) -->
+          <!-- 
+            SEARCH INPUT
+            Type a mural name or keyword to find specific murals.
+          -->
           <div class="filter-group" style="margin-top: 20px;">
             <label for="searchInput">Search</label>
             <input type="text" id="searchInput" placeholder="Search Murals..." />
           </div>
 
+          <!-- 
+            ADVANCED SEARCH FILTERS
+            This section can be expanded to show more detailed filters.
+            Click the "Advanced Search Filters" heading to expand/collapse.
+          -->
           <div style="border-top: 1px solid var(--panel-border); margin-top: 10px; padding-top: 5px;">
             <button id="toggleSearchFiltersBtn" class="view-all-btn" style="width: 100%; text-align: left; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; text-decoration: none; font-weight: 600; color: var(--heading-color); text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px;">
               <span>Advanced Search Filters</span>
               <span id="toggleSearchFiltersIcon">+</span>
             </button>
 
+            <!-- 
+              ADVANCED FILTERS CONTAINER
+              Initially hidden, shows when user clicks the heading above.
+            -->
             <div id="searchFiltersContainer" style="display: none; flex-direction: column; gap: 20px;">
+              <!-- 
+                YEAR FILTER
+                Dropdown to filter murals by the year they were created.
+              -->
               <div class="filter-group">
                 <label for="yearFilter">Year</label>
                 <select id="yearFilter" class="filter-select">
                   <option value="">All Years</option>
                 </select>
               </div>
-
+              
+              <!-- 
+                SCHOOL/SITE FILTER
+                Filter murals by which school or location they're at.
+              -->
               <div class="filter-group">
                 <label for="schoolsFilter">Schools / Sites</label>
                 <select id="schoolsFilter" class="filter-select">
                   <option value="">All Schools / Sites</option>
                 </select>
               </div>
-
+              
+              <!-- 
+                BOROUGH FILTER
+                Filter murals by which NYC borough they're in.
+              -->
               <div class="filter-group">
                 <label for="boroughFilter">Locations</label>
                 <select id="boroughFilter" class="filter-select">
@@ -125,106 +326,182 @@
           </div>
         </section>
 
+        <!-- 
+          ============================================================
+          RECENTLY VIEWED SECTION
+          Shows murals you've clicked on recently.
+          Helps you quickly revisit murals you were interested in.
+          ============================================================
+        -->
         <section class="recents-panel">
-          <div class="filter-header">
-            <label>Recently Viewed</label>
-          </div>
-          <div id="recentMuralsList" class="recent-list">
-            <!-- Populated via JS -->
-          </div>
+          <div class="filter-header"><label>Recently Viewed</label></div>
+          <div id="recentMuralsList" class="recent-list"></div>
         </section>
 
+        <!-- 
+          ============================================================
+          SAVED MURALS SECTION
+          Murals you've saved by clicking the "Save" button on their info card.
+          Like a favorites or bookmark list.
+          ============================================================
+        -->
         <section class="saved-panel">
-          <div class="filter-header">
-            <label>Saved Murals</label>
-          </div>
-          <div id="savedMuralsList" class="recent-list">
-            <!-- Populated via JS -->
+          <div class="filter-header"><label>Saved Murals</label></div>
+          <div id="savedMuralsList" class="recent-list"></div>
         </section>
 
+        <!-- 
+          ============================================================
+          FEATURED MURALS SECTION
+          Shows selected "spotlight" murals chosen by Thrive Collective.
+          The Refresh button updates this list with new featured murals.
+          ============================================================
+        -->
         <section class="featured-panel">
           <div class="filter-header">
             <label>Featured Murals</label>
-            <button id="refreshFeaturedMuralsBtn" class="view-all-btn" style="text-decoration: none; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-              <span style="font-size: 16px;">🔄</span> Refresh
-            </button>
+            <button id="refreshFeaturedMuralsBtn" class="view-all-btn" style="text-decoration: none; font-weight: 600;">Refresh</button>
           </div>
           <div id="featuredMuralsList"></div>
         </section>
 
+        <!-- 
+          ============================================================
+          CURATED TOURS SECTION
+          Pre-made tour suggestions or the option to create your own.
+          Click the heading to expand and see available tours.
+          ============================================================
+        -->
         <section class="tours-panel">
           <div style="border-top: 1px solid var(--panel-border); margin-top: 10px; padding-top: 5px;">
             <button id="toggleCuratedToursBtn" class="view-all-btn" style="width: 100%; text-align: left; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; text-decoration: none; font-weight: 600; color: var(--heading-color); text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px;">
               <span>Curated Tour</span>
               <span id="toggleCuratedToursIcon">+</span>
             </button>
-
             <div id="curatedToursContainer" style="display: none; flex-direction: column; gap: 20px;">
-              <p class="tours-panel-subtitle">
-                Generate a custom walking route near you using the "Create Local Tour" feature.
-              </p>
-              <div id="tourCards" class="tour-card-grid">
-                <!-- Populated via JS -->
-              </div>
+              <p class="tours-panel-subtitle">Generate a custom walking route near you using the "Create Local Tour" feature.</p>
+              <div id="tourCards" class="tour-card-grid"></div>
             </div>
           </div>
         </section>
       </aside>
 
-      <!-- Modal for View All popups -->
+      <!-- 
+        ============================================================
+        VIEW ALL MODAL (Pop-up Window)
+        When you click "View All" on any section, this pop-up appears.
+        Shows a larger list of items than what fits in the sidebar.
+        ============================================================
+      -->
       <div id="viewAllModal" class="modal hidden">
         <div class="modal-content">
           <div class="modal-header">
             <h2 id="modalTitle">View All</h2>
             <button class="modal-close" id="modalClose">&times;</button>
           </div>
-          <div class="modal-body" id="modalBody">
-            <!-- Content will be populated dynamically -->
-          </div>
+          <div class="modal-body" id="modalBody"></div>
         </div>
       </div>
 
+      <!-- 
+        ============================================================
+        MAP CONTAINER
+        This is where the Google Map is displayed.
+        Takes up the majority of the screen space.
+        ============================================================
+      -->
       <main id="map-container">
         <div id="map"></div>
-        <div id="map-loading">Loading murals…</div>
+        <!-- 
+          LOADING MESSAGE
+          Shows while the map and mural data are loading.
+        -->
+        <div id="map-loading">Loading murals...</div>
+        <!-- 
+          ERROR MESSAGE
+          Shows if there's a problem loading the data.
+        -->
         <div id="map-error" class="hidden">
           There was a problem loading mural data. Check the CSV URL or network connection.
         </div>
       </main>
 
-      <button
-        id="sidebarShowTab"
-        class="sidebar-show-tab hidden"
-        aria-label="Show sidebar"
-        aria-expanded="false"
-      >
+      <!-- 
+        SIDEBAR SHOW TAB
+        When the sidebar is hidden, this small tab appears on the left.
+        Click it to show the sidebar again.
+      -->
+      <button id="sidebarShowTab" class="sidebar-show-tab hidden" aria-label="Show sidebar" aria-expanded="false">
         <span>›</span>
       </button>
+      
+      <!-- 
+        TOAST NOTIFICATIONS
+        Small popup messages that appear briefly at the bottom.
+        Used to confirm actions or show status messages.
+      -->
       <div id="toast" class="toast hidden"></div>
     </div>
 
-    <!-- Config (CSV URL, defaults, etc.) -->
+    <!-- 
+      ============================================================
+      JAVASCRIPT SECTION
+      These scripts make the page interactive.
+      They load data, control the map, and handle user actions.
+      ============================================================
+    -->
+
+    <!-- 
+      SECRET CONFIG
+      This file contains sensitive information like API keys.
+      It's kept separate to avoid exposing secrets in the main code.
+    -->
     <script src="secretconfig.js"></script>
+    
+    <!-- 
+      MAIN CONFIGURATION
+      Contains general settings for the application.
+    -->
     <script src="js/config.js"></script>
-    <!-- MarkerClusterer library for clustering -->
+    
+    <!-- 
+      GOOGLE MAPS MARKER CLUSTERER
+      This library groups nearby markers together on the map.
+      Prevents the map from being cluttered with too many pins.
+    -->
     <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
-    <!-- Map logic -->
+    
+    <!-- 
+      MAIN MAP JAVASCRIPT
+      This is the core logic file that makes everything work:
+      - Loads mural data from CSV
+      - Renders the map and markers
+      - Handles search, filters, and tours
+      - Manages user interactions
+    -->
     <script src="js/map.js"></script>
 
-    <!-- Load Google Maps JavaScript API from a secret config file -->
+    <!-- 
+      GOOGLE MAPS API LOADER
+      This script dynamically loads the Google Maps API.
+      It uses the API key from secretconfig.js.
+      The callback 'initMap' runs when the API is ready.
+    -->
     <script>
       (function() {
+        // Get the API key from the secret config
         const apiKey = window.MURAL_MAP_SECRETS?.GOOGLE_MAPS_API_KEY;
         if (!apiKey) {
-          console.error('Missing Google Maps API key. Create secretconfig.js or set GOOGLE_MAPS_API_KEY in Vercel.');
+          console.error('Missing Google Maps API key.');
           return;
         }
-
+        // Create a script element to load the Google Maps API
         const script = document.createElement('script');
-        script.async = true;
+        script.async = true; // Load asynchronously so page loads faster
         script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker&callback=initMap`;
+        // Add the script to the page, which starts the loading process
         document.head.appendChild(script);
       })();
     </script>
-  </body>
+</body>
 </html>
