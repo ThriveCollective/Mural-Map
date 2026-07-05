@@ -292,7 +292,7 @@ function renderTourCards() {
   if (!curatedTours.length) {
     const note = document.createElement("p");
     note.className = "tours-panel-subtitle";
-    note.textContent = "Use 'Create Local Tour' above to generate a custom itinerary.";
+    note.textContent = "Enjoy!";
     container.appendChild(note);
     return;
   }
