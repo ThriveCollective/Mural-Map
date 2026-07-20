@@ -46,6 +46,7 @@
       - Responsive design for different screen sizes
     -->
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
     <!-- 
       FAVICON
@@ -452,24 +453,22 @@
     -->
 
     <!-- 
-      SECRET CONFIG
-      This file contains sensitive information like API keys.
-      It's kept separate to avoid exposing secrets in the main code.
-    -->
-    <script src="secretconfig.js"></script>
-    
-    <!-- 
       MAIN CONFIGURATION
       Contains general settings for the application.
     -->
     <script src="js/config.js"></script>
     
     <!-- 
-      GOOGLE MAPS MARKER CLUSTERER
-      This library groups nearby markers together on the map.
-      Prevents the map from being cluttered with too many pins.
+      LEAFLET MAP LIBRARY
+      Free OpenStreetMap-based map provider used by the alternate branch.
     -->
-    <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- 
+      LEAFLET COMPATIBILITY SHIM
+      Preserves the current app-facing API shape so the rest of the map.js code keeps working.
+    -->
+    <script src="js/leaflet-compat.js"></script>
     
     <!-- 
       MAIN MAP JAVASCRIPT
@@ -480,44 +479,5 @@
       - Manages user interactions
     -->
     <script src="js/map.js"></script>
-
-    <!-- 
-      GOOGLE MAPS API LOADER
-      This script dynamically loads the Google Maps API.
-      It uses the API key from secretconfig.js.
-      The callback 'initMap' runs when the API is ready.
-    -->
-    <script>
-      (function() {
-        window.gm_authFailure = function() {
-          const errorEl = document.getElementById('map-error');
-          const loadingEl = document.getElementById('map-loading');
-          if (errorEl) {
-            errorEl.textContent = 'Google Maps could not be loaded. Please verify the API key and billing configuration.';
-            errorEl.classList.remove('hidden');
-          }
-          if (loadingEl) {
-            loadingEl.classList.add('hidden');
-          }
-        };
-
-        // Get the API key from the secret config
-        const apiKey = window.MURAL_MAP_SECRETS?.GOOGLE_MAPS_API_KEY;
-        if (!apiKey) {
-          console.error('Missing Google Maps API key.');
-          window.gm_authFailure();
-          return;
-        }
-        // Create a script element to load the Google Maps API
-        const script = document.createElement('script');
-        script.async = true; // Load asynchronously so page loads faster
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker&callback=initMap`;
-        script.onerror = function() {
-          window.gm_authFailure();
-        };
-        // Add the script to the page, which starts the loading process
-        document.head.appendChild(script);
-      })();
-    </script>
 </body>
 </html>
