@@ -3846,6 +3846,10 @@ window.initMap = initMap;
     
     if (typeof setupMuralView === 'function') setupMuralView();
     if (typeof setupCustomTourRadiusControl === 'function') setupCustomTourRadiusControl();
+
+    if (window.L && typeof initMap === 'function') {
+      initMap();
+    }
   };
 
   if (document.readyState === 'loading') {
