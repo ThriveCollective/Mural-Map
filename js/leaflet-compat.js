@@ -21,6 +21,75 @@
     return [0, 0];
   }
 
+  function normalizeLatLng(value) {
+    if (!value) return { lat: 0, lng: 0 };
+    if (Array.isArray(value)) {
+      return { lat: Number(value[0]), lng: Number(value[1]) };
+    }
+    if (typeof value.lat === 'function') {
+      return { lat: Number(value.lat()), lng: Number(value.lng()) };
+    }
+    if (typeof value.lat === 'number' && typeof value.lng === 'number') {
+      return { lat: Number(value.lat), lng: Number(value.lng) };
+    }
+    return { lat: 0, lng: 0 };
+  }
+
+  function getMarkerIconSize(content) {
+    if (!content || typeof content === 'string') {
+      return [24, 24];
+    }
+
+    const className = content.className || '';
+    if (className.includes('marker-highlight')) return [44, 44];
+    if (className.includes('marker-number')) return [36, 36];
+    if (className.includes('marker-cluster')) return [40, 40];
+    if (className.includes('marker-dot')) return [24, 24];
+
+    const width = Number(content.offsetWidth) || 24;
+    const height = Number(content.offsetHeight) || 24;
+    return [Math.max(20, width), Math.max(20, height)];
+  }
+
+  function metersToMiles(meters) {
+    const miles = (Number(meters) || 0) / 1609.344;
+    return (Math.round(miles * 10) / 10).toFixed(1);
+  }
+
+  function durationLabel(seconds) {
+    const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const mins = Math.round(totalSeconds / 60);
+    return `${mins} min`;
+  }
+
+  function walkGeoJsonCoordinates(coords, callback) {
+    if (!Array.isArray(coords)) return;
+    if (coords.length >= 2 && Number.isFinite(coords[0]) && Number.isFinite(coords[1])) {
+      callback({ lat: Number(coords[1]), lng: Number(coords[0]) });
+      return;
+    }
+
+    coords.forEach((item) => walkGeoJsonCoordinates(item, callback));
+  }
+
+  function wrapGeoJsonFeature(feature) {
+    const geometry = feature && feature.geometry ? feature.geometry : null;
+    return {
+      ...feature,
+      getProperty(name) {
+        return feature && feature.properties ? feature.properties[name] : null;
+      },
+      getGeometry() {
+        return {
+          forEachLatLng(callback) {
+            if (typeof callback !== 'function') return;
+            walkGeoJsonCoordinates(geometry && geometry.coordinates, callback);
+          }
+        };
+      }
+    };
+  }
+
   function latLngToGoogle(value) {
     if (!value) return null;
     if (typeof value.lat === 'function') {
@@ -97,7 +166,8 @@
               layer.addTo(this._map);
               if (this.data._listener) {
                 layer.eachLayer((item) => {
-                  this.data._listener({ feature: item.feature || { getProperty: () => null } });
+                  const feature = wrapGeoJsonFeature(item.feature || { properties: {} });
+                  this.data._listener({ feature });
                 });
               }
             });
@@ -166,20 +236,24 @@
     constructor(config) {
       const content = config.content;
       const position = config.position || { lat: 0, lng: 0 };
-      const iconHtml = content && content.outerHTML ? content.outerHTML : content;
+      const iconHtml = content && content.outerHTML ? content.outerHTML : content || '';
+      const iconSize = getMarkerIconSize(content);
       const icon = L.divIcon({
         className: 'mural-leaflet-marker',
-        html: iconHtml || '',
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
+        html: iconHtml,
+        iconSize,
+        iconAnchor: [iconSize[0] / 2, iconSize[1] / 2]
       });
       this._marker = L.marker(toLeafletLatLng(position), { icon, title: config.title || '' });
       this._listeners = {};
-      this._map = null;
+      this._map = config.map || null;
       this._marker.on('click', () => {
         const listeners = this._listeners['gmp-click'] || [];
         listeners.forEach(fn => fn(this));
       });
+      if (this._map) {
+        this.setMap(this._map);
+      }
     }
 
     addListener(eventName, callback) {
@@ -216,7 +290,10 @@
         fillColor: config.fillColor || '#60a5fa',
         fillOpacity: config.fillOpacity || 0.2
       });
-      this._map = null;
+      this._map = config.map || null;
+      if (this._map) {
+        this.setMap(this._map);
+      }
     }
 
     setMap(map) {
@@ -235,12 +312,15 @@
 
   class Polyline {
     constructor(config) {
-      this._polyline = L.polyline(config.path.map(point => toLeafletLatLng(point)), {
+      this._polyline = L.polyline((config.path || []).map(point => toLeafletLatLng(point)), {
         color: config.strokeColor || '#3b82f6',
         opacity: config.strokeOpacity || 0.8,
         weight: config.strokeWeight || 5
       });
-      this._map = null;
+      this._map = config.map || null;
+      if (this._map) {
+        this.setMap(this._map);
+      }
     }
 
     setMap(map) {
@@ -281,37 +361,78 @@
   }
 
   class Geocoder {
-    async geocode(request) {
+    async geocode(request, callback) {
       const location = request && request.location;
       const address = request && request.address;
 
-      if (location) {
-        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.lat}&lon=${location.lng}`;
-        const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-        const json = await response.json();
-        return { results: [{ formatted_address: json.display_name }] };
-      }
+      try {
+        if (location) {
+          const params = new URLSearchParams({
+            lat: String(Number(location.lat)),
+            lon: String(Number(location.lng))
+          });
+          const response = await fetch(`/reverse-geocode?${params.toString()}`);
+          const json = await response.json();
+          const results = (json.results || []).map(item => ({
+            formatted_address: item.formatted_address || 'Location coordinates only'
+          }));
+          if (typeof callback === 'function') {
+            callback(results, 'OK');
+          }
+          return { results };
+        }
 
-      if (address) {
-        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(address)}`;
-        const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-        const json = await response.json();
-        return { results: json.map(item => ({
-          formatted_address: item.display_name,
-          geometry: { location: { lat: () => Number(item.lat), lng: () => Number(item.lon) } }
-        })) };
-      }
+        if (address) {
+          const params = new URLSearchParams({ address: String(address) });
+          const response = await fetch(`/geocode?${params.toString()}`);
+          const json = await response.json();
+          const results = (json.results || []).map(item => ({
+            formatted_address: item.formatted_address,
+            geometry: {
+              location: {
+                lat: () => Number(item.geometry?.location?.lat?.()),
+                lng: () => Number(item.geometry?.location?.lng?.())
+              }
+            }
+          }));
+          if (typeof callback === 'function') {
+            callback(results, 'OK');
+          }
+          return { results };
+        }
 
-      return { results: [] };
+        if (typeof callback === 'function') {
+          callback([], 'ZERO_RESULTS');
+        }
+        return { results: [] };
+      } catch (error) {
+        console.error('Leaflet geocoder proxy failed:', error);
+        if (typeof callback === 'function') {
+          callback([], 'ERROR');
+        }
+        return { results: [] };
+      }
     }
   }
 
   class DirectionsService {
     route(req, callback) {
-      const origin = req.origin && req.origin.lat ? req.origin : { lat: req.origin[0], lng: req.origin[1] };
-      const destination = req.destination && req.destination.lat ? req.destination : { lat: req.destination[0], lng: req.destination[1] };
-      const profile = req.travelMode === 'BICYCLING' ? 'cycling' : req.travelMode === 'WALKING' ? 'foot' : 'driving';
-      const url = `https://router.project-osrm.org/route/v1/${profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false&geometries=geojson&steps=true&alternatives=true`;
+      const origin = normalizeLatLng(req.origin);
+      const destination = normalizeLatLng(req.destination);
+      const profile = req.travelMode === 'BICYCLING' ? 'cycling' : req.travelMode === 'WALKING' || req.travelMode === 'TRANSIT' ? 'foot' : 'driving';
+      const modeLabel = req.travelMode === 'WALKING' ? 'Walk' : req.travelMode === 'BICYCLING' ? 'Bike' : req.travelMode === 'TRANSIT' ? 'Transit' : 'Drive';
+      const waypoints = Array.isArray(req.waypoints) ? req.waypoints : [];
+      const waypointCoordinates = waypoints
+        .map((wp) => normalizeLatLng(wp.location || wp))
+        .map(point => `${point.lng},${point.lat}`);
+
+      const coordinates = [
+        `${origin.lng},${origin.lat}`,
+        ...waypointCoordinates,
+        `${destination.lng},${destination.lat}`
+      ].join(';');
+
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coordinates}?overview=full&geometries=geojson&steps=true&alternatives=true`;
 
       fetch(url)
         .then(response => response.json())
@@ -322,19 +443,31 @@
             return;
           }
 
-          const legs = [{
-            duration: { value: Math.round(route.duration), text: `${Math.round(route.duration / 60)} min` },
-            distance: { text: `${Math.round(route.distance / 1609.344 * 100) / 100} mi` },
-            steps: (route.legs && route.legs[0] && route.legs[0].steps) || []
-          }];
+          const routeDistanceMeters = Number(route.distance) || 0;
+          const routeDurationSeconds = Number(route.duration) || 0;
+          const stepDistanceMeters = routeDistanceMeters;
+          const leg = {
+            duration: { value: Math.round(routeDurationSeconds), text: durationLabel(routeDurationSeconds) },
+            distance: { value: routeDistanceMeters, text: `${metersToMiles(routeDistanceMeters)} mi` },
+            start_location: origin,
+            end_location: destination,
+            steps: [{
+              distance: { value: stepDistanceMeters, text: `${metersToMiles(stepDistanceMeters)} mi` },
+              duration: { value: Math.round(routeDurationSeconds), text: durationLabel(routeDurationSeconds) },
+              start_location: origin,
+              end_location: destination,
+              instructions: `${modeLabel} route`,
+              travel_mode: req.travelMode || 'DRIVING'
+            }]
+          };
 
           const routeResponse = {
             routes: [{
-              legs,
-              summary: 'OpenStreetMap route',
-              duration: route.duration,
-              distance: route.distance,
-              geometry: route.geometry
+              legs: [leg],
+              summary: route.summary || `${modeLabel} route`,
+              duration: routeDurationSeconds,
+              distance: routeDistanceMeters,
+              geometry: route.geometry || { type: 'LineString', coordinates: [] }
             }]
           };
 
@@ -381,6 +514,77 @@
     }
   }
 
+  const markerClusterer = {
+    __fallback: true,
+    gridAlgorithm: {
+      GridAlgorithm: class {
+        constructor(options = {}) {
+          this.radius = options.radius || 80;
+          this.maxZoom = options.maxZoom || 14;
+        }
+      }
+    },
+    MarkerClusterer: class {
+      constructor({ map, markers = [], algorithm, renderer }) {
+        this._map = map;
+        this._markers = Array.isArray(markers) ? markers : [];
+        this._algorithm = algorithm || { radius: 80, maxZoom: 14 };
+        this._renderer = renderer;
+        this._clusters = [];
+        this._clusterLayer = L.layerGroup();
+        this._clusterLayer.addTo(map.getLeafletMap());
+        this._renderClusters();
+      }
+
+      clearMarkers() {
+        this._clusters.forEach((clusterMarker) => {
+          if (clusterMarker && typeof clusterMarker.setMap === 'function') {
+            clusterMarker.setMap(null);
+          }
+        });
+        this._clusters = [];
+        this._clusterLayer.clearLayers();
+      }
+
+      _renderClusters() {
+        this.clearMarkers();
+        const radius = Number(this._algorithm?.radius || 80);
+        const groups = new Map();
+
+        this._markers.forEach((marker) => {
+          if (!marker || typeof marker.setMap !== 'function') return;
+          if (marker._marker && marker._marker.getLatLng) {
+            const ll = marker._marker.getLatLng();
+            const latBucket = Math.round(ll.lat / (radius / 1000));
+            const lngBucket = Math.round(ll.lng / (radius / 1000));
+            const key = `${latBucket}:${lngBucket}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(marker);
+          }
+        });
+
+        groups.forEach((members) => {
+          const clusterPosition = members.reduce((acc, marker) => {
+            const ll = marker._marker.getLatLng();
+            acc.lat += ll.lat;
+            acc.lng += ll.lng;
+            return acc;
+          }, { lat: 0, lng: 0 });
+
+          const position = {
+            lat: clusterPosition.lat / members.length,
+            lng: clusterPosition.lng / members.length
+          };
+          const clusterMarker = this._renderer?.render?.({ count: members.length, position }) || null;
+          if (clusterMarker && typeof clusterMarker.setMap === 'function') {
+            clusterMarker.setMap(this._map);
+            this._clusters.push(clusterMarker);
+          }
+        });
+      }
+    }
+  };
+
   google.maps.LatLng = LatLng;
   google.maps.LatLngBounds = LatLngBounds;
   google.maps.Map = Map;
@@ -393,12 +597,16 @@
   google.maps.DirectionsService = DirectionsService;
   google.maps.DirectionsRenderer = DirectionsRenderer;
   google.maps.ControlPosition = { RIGHT_BOTTOM: 'rightbottom', LEFT_BOTTOM: 'leftbottom' };
-  google.maps.SymbolPath = { CIRCLE: 'circle' };
+  google.maps.SymbolPath = {
+    CIRCLE: 'circle',
+    FORWARD_CLOSED_ARROW: 'forward_closed_arrow'
+  };
   google.maps.places = google.maps.places || { Autocomplete: function() { return { bindTo() {}, addListener() {} }; } };
   google.maps.event = google.maps.event || { trigger: function(marker, name) { if (marker && typeof marker.trigger === 'function') marker.trigger(name); } };
   google.maps.TravelMode = { TRANSIT: 'TRANSIT', WALKING: 'WALKING', DRIVING: 'DRIVING', BICYCLING: 'BICYCLING' };
   google.maps.TransitLayer = function() { return { setMap() {} }; };
   google.maps.StreetViewPanorama = function() { return { setVisible() {} }; };
 
+  window.markerClusterer = markerClusterer;
   window.google = google;
 })();

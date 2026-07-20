@@ -870,11 +870,20 @@ function createClusterRenderer() {
 
 function updateClusterer() {
   const renderer = createClusterRenderer();
-  
+
+  if (window.markerClusterer && window.markerClusterer.__fallback) {
+    markers.forEach(m => m.setMap(map));
+    if (clusterer) {
+      clusterer.clearMarkers();
+      clusterer = null;
+    }
+    return;
+  }
+
   function createAlgorithm() {
     try {
       const currentZoom = map ? map.getZoom() : 11;
-      
+
       if (activeFilters.muralView === 25) {
         if (typeof markerClusterer !== 'undefined' && markerClusterer.gridAlgorithm && markerClusterer.gridAlgorithm.GridAlgorithm) {
           return new markerClusterer.gridAlgorithm.GridAlgorithm({
@@ -888,7 +897,7 @@ function updateClusterer() {
           });
         }
       }
-      
+
       let radius;
       if (currentZoom <= 11) {
         radius = 400;
@@ -899,7 +908,7 @@ function updateClusterer() {
       } else {
         radius = 60;
       }
-      
+
       if (typeof markerClusterer !== 'undefined' && markerClusterer.gridAlgorithm && markerClusterer.gridAlgorithm.GridAlgorithm) {
         return new markerClusterer.gridAlgorithm.GridAlgorithm({
           radius: radius,
@@ -916,11 +925,11 @@ function updateClusterer() {
     }
     return undefined;
   }
-  
+
   if (typeof markerClusterer !== 'undefined' && markerClusterer.MarkerClusterer) {
     const algorithm = createAlgorithm();
     if (clusterer) clusterer.clearMarkers();
-    
+
     clusterer = new markerClusterer.MarkerClusterer({ map, markers, algorithm, renderer });
   } else if (window.markerClusterer && window.markerClusterer.MarkerClusterer) {
     const algorithm = createAlgorithm();
