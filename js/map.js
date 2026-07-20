@@ -37,6 +37,11 @@ let directionsRenderer = null;
 let routeRenderers = [];
 let muralHistory = JSON.parse(localStorage.getItem('mural_history') || '[]');
 let savedMurals = [];
+let geocodingUnavailableWarningShown = false;
+
+function isGoogleMapsApiAvailable() {
+  return typeof google !== 'undefined' && !!google.maps;
+}
 
 // Load saved murals with error handling
 try {
@@ -85,6 +90,10 @@ async function getAddressFromLatLng(lat, lng) {
   
   if (geocodeCache.has(key)) {
     return geocodeCache.get(key);
+  }
+
+  if (!isGoogleMapsApiAvailable()) {
+    return "Location coordinates only";
   }
 
   if (!geocoder) {
@@ -543,6 +552,14 @@ function getColumnIndex(headerRow, possibleNames) {
 }
 
 async function geocodeMuralsWithAddresses(murals) {
+  if (!isGoogleMapsApiAvailable()) {
+    if (!geocodingUnavailableWarningShown) {
+      console.warn("Google Maps geocoding is unavailable. Skipping mural address geocoding.");
+      geocodingUnavailableWarningShown = true;
+    }
+    return;
+  }
+
   if (!geocoder) geocoder = new google.maps.Geocoder();
   
   const CACHE_KEY = 'mural_address_to_coords';
@@ -2563,6 +2580,12 @@ async function initMap() {
     setupNearestControls();
     showError(false);
     showLoading(true);
+
+    if (!isGoogleMapsApiAvailable()) {
+      showError(true, "Google Maps could not be loaded. Please verify the API key and billing configuration.");
+      showLoading(false);
+      return;
+    }
 
     const murals = await loadMuralsFromSheet();
     allMurals = murals;

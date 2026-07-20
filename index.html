@@ -97,8 +97,8 @@
             Changes colors of the entire page for better visibility in different lighting.
           -->
           <button id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode">
-            <span class="sun-icon">Light</span>
-            <span class="moon-icon">Dark</span>
+            <span class="sun-icon" aria-hidden="true">☀</span>
+            <span class="moon-icon" aria-hidden="true">☾</span>
             <span id="themeToggleText">Light Mode</span>
           </button>
         </header>
@@ -489,16 +489,32 @@
     -->
     <script>
       (function() {
+        window.gm_authFailure = function() {
+          const errorEl = document.getElementById('map-error');
+          const loadingEl = document.getElementById('map-loading');
+          if (errorEl) {
+            errorEl.textContent = 'Google Maps could not be loaded. Please verify the API key and billing configuration.';
+            errorEl.classList.remove('hidden');
+          }
+          if (loadingEl) {
+            loadingEl.classList.add('hidden');
+          }
+        };
+
         // Get the API key from the secret config
         const apiKey = window.MURAL_MAP_SECRETS?.GOOGLE_MAPS_API_KEY;
         if (!apiKey) {
           console.error('Missing Google Maps API key.');
+          window.gm_authFailure();
           return;
         }
         // Create a script element to load the Google Maps API
         const script = document.createElement('script');
         script.async = true; // Load asynchronously so page loads faster
         script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker&callback=initMap`;
+        script.onerror = function() {
+          window.gm_authFailure();
+        };
         // Add the script to the page, which starts the loading process
         document.head.appendChild(script);
       })();
